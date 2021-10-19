@@ -60,7 +60,7 @@ for i in $@; do
   mkdir -p "$build"
 
   echo "Generating the wts file..."
-  python gen_wts.py -w "$pt" -o "$build/temp.wts" &> /dev/null
+  python3 gen_wts.py -w "$pt" -o "$build/temp.wts" &> /dev/null
   echo "finished"
   echo '-------------------------------------------'
 

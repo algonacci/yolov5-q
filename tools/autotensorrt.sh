@@ -58,7 +58,7 @@ fi
 mkdir -p "$build"
 
 echo "Generating the wts file..."
-python gen_wts.py -w "$pt" -o "$build/temp.wts"
+python3 gen_wts.py -w "$pt" -o "$build/temp.wts"
 echo "finished"
 echo '-------------------------------------------'
 
