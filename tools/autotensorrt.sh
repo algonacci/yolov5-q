@@ -9,14 +9,14 @@ config="$1"
 [[ (-f "$PWD/gen_wts.py") ]] || (echo "$PWD/gen_wts.py does not exist." && exit 1)
 
 echo "Reading config from $config..."
-width="$(awk -F '=' '/^width/ {print $2}' "$config" )"
-height="$(awk -F '=' '/^height/ {print $2}' "$config" )"
-class="$(awk -F '=' '/^class/ {print $2}' "$config" )"
-pt="$(awk -F '=' '/^pt_path/ {print $2}' "$config" )"
-type="$(awk -F '=' '/^model_type/ {print $2}' "$config" )"
-engine="$(awk -F '=' '/^engine_path/ {print $2}' "$config" )"
-build="$(awk -F '=' '/^build_dir/ {print $2}' "$config" )"
-tensorrtx="$(awk -F '=' '/^tensorrtx_dir/ {print $2}' "$config" )"
+width="$(awk -F '=' '/^width/ {print $2}' "$config")"
+height="$(awk -F '=' '/^height/ {print $2}' "$config")"
+class="$(awk -F '=' '/^class/ {print $2}' "$config")"
+pt="$(awk -F '=' '/^pt_path/ {print $2}' "$config")"
+type="$(awk -F '=' '/^model_type/ {print $2}' "$config")"
+engine="$(awk -F '=' '/^engine_path/ {print $2}' "$config")"
+build="$(awk -F '=' '/^build_dir/ {print $2}' "$config")"
+tensorrtx="$(awk -F '=' '/^tensorrtx_dir/ {print $2}' "$config")"
 build="$tensorrtx/$build"
 
 # check str
@@ -50,10 +50,10 @@ sed -i "/^\s*static constexpr int INPUT_H/s/[0-9]\+/$height/" "$tensorrtx/yolola
 sed -i "/^\s*static constexpr int CLASS_NUM/s/[0-9]\+/$class/" "$tensorrtx/yololayer.h"
 
 if [[ -d "$build" ]]; then
-  echo "\"$build\" existed, Clear it?"
-  read -p "[y]es or [n]o (default: no) : " -r option1
-  [[ "$option1" == 'y' ]] && rm -rf "$build"
-  echo '-------------------------------------------'
+	echo "\"$build\" existed, Clear it?"
+	read -p "[y]es or [n]o (default: no) : " -r option1
+	[[ "$option2" == 'y' || "$option2" == 'yes' ]] && rm -rf "$build"
+	echo '-------------------------------------------'
 fi
 mkdir -p "$build"
 
@@ -64,18 +64,18 @@ echo '-------------------------------------------'
 
 echo "Compiling the cpp code..."
 cd "$build"
-cmake .. &> /dev/null && make -j12 &> /dev/null
+cmake .. &>/dev/null && make -j12 &>/dev/null
 echo "finished"
 echo '-------------------------------------------'
 
 echo "Building the engine, please wait for a while..."
-./yolov5 -s "$PWD/temp.wts"  "$engine" "$type" &> /dev/null
+./yolov5 -s "$PWD/temp.wts" "$engine" "$type" &>/dev/null
 echo "finished"
 echo '-------------------------------------------'
 
 echo "Delete the temp.wts?"
 read -p "[y]es or [n]o (default: no) : " -r option2
-[[ "$option2" == 'y' ]] && rm "$build/temp.wts"
+[[ "$option2" == 'y' || "$option2" == 'yes' ]] && rm "$build/temp.wts"
 echo "finished"
 echo '-------------------------------------------'
-cd - &> /dev/null
+cd - &>/dev/null
