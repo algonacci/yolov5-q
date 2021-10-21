@@ -97,14 +97,27 @@ if [[ -n "$target_dir" ]]; then
 fi
 
 # generte data.yaml
+# echo "Generating data.yaml..."
+# [ -f "$new_yaml" ] && rm "$new_yaml"
+# echo "path: $data_dir" >>$new_yaml
+# echo "train: images/train" >>$new_yaml
+# echo "val: images/val" >>$new_yaml
+# # echo "test: test" >>$new_yaml
+# echo "nc: ${#class_names[@]}" >>$new_yaml
+# echo "names: [${class_names[@]}]" >>$new_yaml
+# sed -i '/^names/s/ /, /2g' "$new_yaml"
+# echo "finished"
+# echo "---------------------------------"
+
+# generte data.yaml
 echo "Generating data.yaml..."
-[ -f "$new_yaml" ] && rm "$new_yaml"
-echo "path: $data_dir" >>$new_yaml
-echo "train: images/train" >>$new_yaml
-echo "val: images/val" >>$new_yaml
-# echo "test: test" >>$new_yaml
-echo "nc: ${#class_names[@]}" >>$new_yaml
-echo "names: [${class_names[@]}]" >>$new_yaml
+{
+	echo "path: $data_dir"
+	echo "train: images/train"
+	echo "val: images/val"
+	echo "nc: ${#class_names[@]}"
+	echo "names: [${class_names[@]}]"
+} >"$new_yaml"
 sed -i '/^names/s/ /, /2g' "$new_yaml"
 echo "finished"
 echo "---------------------------------"
