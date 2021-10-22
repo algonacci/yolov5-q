@@ -5,10 +5,10 @@ set -euo pipefail
 [[ "$#" == 0 ]] && echo "please give a config file..." && exit 1
 config="$1"
 
-[[ (-f "$config") ]] || (echo "$config does not exist." && exit 1)
+[[ (-f "$config") ]] || (echo "\"$config\" does not exist." && exit 1)
 [[ (-f "$PWD/gen_wts.py") ]] || (echo "$PWD/gen_wts.py does not exist." && exit 1)
 
-echo "Reading config from $config..."
+echo "Reading config from \"$config\"..."
 width="$(awk -F '=' '/^width/ {print $2}' "$config")"
 height="$(awk -F '=' '/^height/ {print $2}' "$config")"
 class="$(awk -F '=' '/^class/ {print $2}' "$config")"

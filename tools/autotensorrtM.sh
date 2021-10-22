@@ -2,18 +2,19 @@
 
 set -euo pipefail
 # config="$PWD/tools/config"
-[[ "$#" == 0 ]] && echo "please give a config file..." && exit 1
+[[ "$#" == 0 ]] && echo "please give at least a config file..." && exit 1
 
 total=$#
 count=0
-for i in $@; do
+# for i in $@; do
+for i; do
 	echo '-------------------------------------------'
 	config="$i"
 
-	[[ (-f "$config") ]] || (echo "$config does not exist." && continue)
+	[[ (-f "$config") ]] || (echo "\"$config\" does not exist." && continue)
 	[[ (-f "$PWD/gen_wts.py") ]] || (echo "$PWD/gen_wts.py does not exist." && continue)
 
-	echo "Reading config from $config..."
+	echo "Reading config from \"$config\"..."
 	width="$(awk -F '=' '/^width/ {print $2}' "$config")"
 	height="$(awk -F '=' '/^height/ {print $2}' "$config")"
 	class="$(awk -F '=' '/^class/ {print $2}' "$config")"
@@ -76,6 +77,7 @@ for i in $@; do
 
 	echo "Deleting the temp.wts!"
 	rm "$build/temp.wts"
+	echo '---------------------------------------------------------------'
 	cd - &>/dev/null
 	count=$((count + 1))
 done
