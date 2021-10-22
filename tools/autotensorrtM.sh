@@ -68,7 +68,8 @@ for i in $@; do
 	echo "finished"
 	echo '-------------------------------------------'
 
-	echo "Building the engine, please wait for a while..."
+	echo "Building the engine to \"$engine\"..."
+	echo "please wait for a while..."
 	./yolov5 -s "$PWD/temp.wts" "$engine" "$type" &>/dev/null
 	echo "finished"
 	echo '-------------------------------------------'

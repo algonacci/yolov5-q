@@ -52,7 +52,7 @@ sed -i "/^\s*static constexpr int CLASS_NUM/s/[0-9]\+/$class/" "$tensorrtx/yolol
 if [[ -d "$build" ]]; then
 	echo "\"$build\" existed, Clear it?"
 	read -p "[y]es or [n]o (default: no) : " -r option1
-	[[ "$option2" == 'y' || "$option2" == 'yes' ]] && rm -rf "$build"
+	[[ "$option1" == 'y' || "$option1" == 'yes' ]] && rm -rf "$build"
 	echo '-------------------------------------------'
 fi
 mkdir -p "$build"
@@ -68,8 +68,10 @@ cmake .. &>/dev/null && make -j12 &>/dev/null
 echo "finished"
 echo '-------------------------------------------'
 
-echo "Building the engine, please wait for a while..."
+echo "Building the engine to \"$engine\"..."
+echo "please wait for a while..."
 ./yolov5 -s "$PWD/temp.wts" "$engine" "$type" &>/dev/null
+# ./yolov5 -s "$PWD/temp.wts" "$engine" "$type"
 echo "finished"
 echo '-------------------------------------------'
 
