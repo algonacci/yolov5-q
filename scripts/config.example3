@@ -1,0 +1,9 @@
+width=640
+height=384
+class=80
+
+model_type=n
+pt_path=/home/laughing/yolov5/weights/yolov5n.pt
+build_dir=buildn
+engine_path=/home/laughing/yolov5/yolov5n.engine
+tensorrtx_dir=/home/laughing/yolov5/tensorrtx

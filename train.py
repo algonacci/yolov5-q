@@ -210,7 +210,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     train_loader, dataset = create_dataloader(train_path, imgsz, batch_size // WORLD_SIZE, gs, single_cls,
                                               hyp=hyp, augment=True, cache=opt.cache, rect=opt.rect, rank=LOCAL_RANK,
                                               workers=workers, image_weights=opt.image_weights, quad=opt.quad,
-                                              prefix=colorstr('train: '))
+                                              prefix=colorstr('train: '), 
+                                              neg_dir=opt.neg_dir,
+                                              bg_dir=opt.bg_dir,
+                                              area_thr=opt.area_thr)
     mlc = int(np.concatenate(dataset.labels, 0)[:, 0].max())  # max label class
     nb = len(train_loader)  # number of batches
     assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
@@ -473,6 +476,10 @@ def parse_opt(known=False):
     parser.add_argument('--upload_dataset', action='store_true', help='W&B: Upload dataset as artifact table')
     parser.add_argument('--bbox_interval', type=int, default=-1, help='W&B: Set bounding-box image logging interval')
     parser.add_argument('--artifact_alias', type=str, default='latest', help='W&B: Version of dataset artifact to use')
+    # additional features
+    parser.add_argument('--neg-dir', type=str, default='', help='negative dir')
+    parser.add_argument('--bg-dir', type=str, default='', help='background dir')
+    parser.add_argument('--area-thr', nargs='+', type=float, default=0.2, help='box after augment / origin box areas')
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
     return opt

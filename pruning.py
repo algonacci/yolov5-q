@@ -129,8 +129,8 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default="models/mobile-yolo5s_voc.yaml", type=str, help='*.cfg path')
-    parser.add_argument('--weights', default="/home/laughing/yolov5/runs/train/exp2/weights/best.pt", type=str, help='*.data path')
-    parser.add_argument('--save-dir', default="/home/laughing/yolov5/weights", type=str, help='*.data path')
+    parser.add_argument('--weights', default="/d/yolov5/runs/prune_test/weights/best.pt", type=str, help='*.data path')
+    parser.add_argument('--save-dir', default="/d/yolov5/weights", type=str, help='*.data path')
     parser.add_argument('-p', '--prob', default=0.5, type=float, help='pruning prob')
     parser.add_argument('-t', '--thres', default=0, type=float, help='pruning thres')
     opt = parser.parse_args()
