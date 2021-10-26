@@ -402,8 +402,8 @@ class warmUpThread(threading.Thread):
 
 if __name__ == "__main__":
     # load custom plugin and engine
-    PLUGIN_LIBRARY = "./tensorrtx/builds/libmyplugins.so"
-    engine_file_path = "./yolov5s.engine"
+    PLUGIN_LIBRARY = "./tensorrtx/build_play/libmyplugins.so"
+    engine_file_path = "/home/laughing/yolov5/runs/play_phone/weights/best.engine"
     # PLUGIN_LIBRARY = "./tensorrtx/test/libmyplugins.so"
     # engine_file_path = "./tensorrtx/test/yolov5n.engine"
 
@@ -434,7 +434,7 @@ if __name__ == "__main__":
     try:
         print('batch size is', yolov5_wrapper.batch_size)
         
-        image_dir = "./tensorrtx/samples/"
+        image_dir = "/e/datasets/phone_all/phone0528_temp/images/val"
         image_path_batches = get_img_path_batches(yolov5_wrapper.batch_size, image_dir)
 
         for i in range(10):

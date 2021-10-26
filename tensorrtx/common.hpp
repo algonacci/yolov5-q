@@ -12,7 +12,7 @@
 using namespace nvinfer1;
 
 cv::Rect get_rect(cv::Mat& img, float bbox[4]) {
-    int l, r, t, b;
+    float l, r, t, b;
     float r_w = Yolo::INPUT_W / (img.cols * 1.0);
     float r_h = Yolo::INPUT_H / (img.rows * 1.0);
     if (r_h > r_w) {
@@ -34,7 +34,7 @@ cv::Rect get_rect(cv::Mat& img, float bbox[4]) {
         t = t / r_h;
         b = b / r_h;
     }
-    return cv::Rect(l, t, r - l, b - t);
+    return cv::Rect(round(l), round(t), round(r - l), round(b - t));
 }
 
 float iou(float lbox[4], float rbox[4]) {
@@ -156,25 +156,25 @@ IScaleLayer* addBatchNorm2d(INetworkDefinition *network, std::map<std::string, W
     return scale_1;
 }
 
+ILayer* FconvBlock(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, ITensor& input, int outch, int ksize, int s, int g, std::string lname) {
+    Weights emptywts{ DataType::kFLOAT, nullptr, 0 };
+    int p = ksize / 3;
+    IScaleLayer* normdata = normalize(network, input);
+    IConvolutionLayer* conv1 = network->addConvolutionNd(*normdata->getOutput(0), outch, DimsHW{ ksize, ksize }, weightMap[lname + ".conv.weight"], emptywts);
 
+    assert(conv1);
+    conv1->setStrideNd(DimsHW{ s, s });
+    conv1->setPaddingNd(DimsHW{ p, p });
+    conv1->setNbGroups(g);
+    IScaleLayer* bn1 = addBatchNorm2d(network, weightMap, *conv1->getOutput(0), lname + ".bn", 1e-3);
 
-/* ILayer* convBlock(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, ITensor& input, int outch, int ksize, int s, int g, std::string lname) { */
-/*     Weights emptywts{ DataType::kFLOAT, nullptr, 0 }; */
-/*     int p = ksize / 3; */
-/*     IConvolutionLayer* conv1 = network->addConvolutionNd(input, outch, DimsHW{ ksize, ksize }, weightMap[lname + ".conv.weight"], emptywts); */
-/*     assert(conv1); */
-/*     conv1->setStrideNd(DimsHW{ s, s }); */
-/*     conv1->setPaddingNd(DimsHW{ p, p }); */
-/*     conv1->setNbGroups(g); */
-/*     IScaleLayer* bn1 = addBatchNorm2d(network, weightMap, *conv1->getOutput(0), lname + ".bn", 1e-3); */
-/*  */
-/*     // silu = x * sigmoid */
-/*     auto sig = network->addActivation(*bn1->getOutput(0), ActivationType::kSIGMOID); */
-/*     assert(sig); */
-/*     auto ew = network->addElementWise(*bn1->getOutput(0), *sig->getOutput(0), ElementWiseOperation::kPROD); */
-/*     assert(ew); */
-/*     return ew; */
-/* } */
+    // silu = x * sigmoid
+    auto sig = network->addActivation(*bn1->getOutput(0), ActivationType::kSIGMOID);
+    assert(sig);
+    auto ew = network->addElementWise(*bn1->getOutput(0), *sig->getOutput(0), ElementWiseOperation::kPROD);
+    assert(ew);
+    return ew;
+}
 
 IScaleLayer* normalize(INetworkDefinition *network, ITensor& input) {
     int len = 3;
@@ -203,31 +203,11 @@ IScaleLayer* normalize(INetworkDefinition *network, ITensor& input) {
     return scale_n;
 }
 
+
 ILayer* convBlock(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, ITensor& input, int outch, int ksize, int s, int g, std::string lname) {
     Weights emptywts{ DataType::kFLOAT, nullptr, 0 };
     int p = ksize / 3;
     IConvolutionLayer* conv1 = network->addConvolutionNd(input, outch, DimsHW{ ksize, ksize }, weightMap[lname + ".conv.weight"], emptywts);
-
-    assert(conv1);
-    conv1->setStrideNd(DimsHW{ s, s });
-    conv1->setPaddingNd(DimsHW{ p, p });
-    conv1->setNbGroups(g);
-    IScaleLayer* bn1 = addBatchNorm2d(network, weightMap, *conv1->getOutput(0), lname + ".bn", 1e-3);
-
-    // silu = x * sigmoid
-    auto sig = network->addActivation(*bn1->getOutput(0), ActivationType::kSIGMOID);
-    assert(sig);
-    auto ew = network->addElementWise(*bn1->getOutput(0), *sig->getOutput(0), ElementWiseOperation::kPROD);
-    assert(ew);
-    return ew;
-}
-
-ILayer* FconvBlock(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, ITensor& input, int outch, int ksize, int s, int g, std::string lname) {
-    Weights emptywts{ DataType::kFLOAT, nullptr, 0 };
-    int p = ksize / 3;
-    IScaleLayer* normdata = normalize(network, input);
-    IConvolutionLayer* conv1 = network->addConvolutionNd(*normdata->getOutput(0), outch, DimsHW{ ksize, ksize }, weightMap[lname + ".conv.weight"], emptywts);
-
     assert(conv1);
     conv1->setStrideNd(DimsHW{ s, s });
     conv1->setPaddingNd(DimsHW{ p, p });

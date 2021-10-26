@@ -23,7 +23,7 @@
 !cfg/yolov3*.cfg
 *.engine
 tensorrtx/build*
-tools/config*
+scripts/config*
 
 storage.googleapis.com
 runs/*
