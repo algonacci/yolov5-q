@@ -58,6 +58,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         ):
+    pause = True
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
@@ -232,8 +233,12 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
             # Stream results
             im0 = annotator.result()
             if view_img:
-                cv2.imshow(str(p), im0)
-                if cv2.waitKey(1) == ord('q'):  # 1 millisecond
+                # cv2.imshow(str(p), im0)
+                cv2.namedWindow('p', cv2.WINDOW_NORMAL)
+                cv2.imshow('p', im0)
+                key = cv2.waitKey(0 if pause else 1)
+                pause = True if key == ord(' ') else False
+                if key == ord('q') or key == ord('e') or key == 27:
                     exit()
 
             # Save results (image with detections)
