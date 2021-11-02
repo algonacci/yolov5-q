@@ -1,11 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-Copyright (c) 2019 luozw, Inc. All Rights Reserved
-
-Authors: luozhiwang(luozw1994@outlook.com)
-Date: 2020/9/7
-"""
 import os
 import argparse
 import numpy as np
@@ -15,28 +9,14 @@ import torch_pruning as tp
 import copy
 import matplotlib.pyplot as plt
 from models.yolo import Model
-from models.experimental import attempt_load
+from utils.general import check_yaml
+from val_sparse import run
 
 
 def load_model(cfg="models/mobile-yolo5l_voc.yaml", weights="./outputs/mvoc/weights/best_mvoc.pt"):
-    restor_num = 0
-    ommit_num = 0
     model = Model(cfg).to(device)
-    ckpt = torch.load(weights, map_location=device)  # load checkpoint
-    dic = {}
-    for k, v in ckpt['model'].float().state_dict().items():
-        if k in model.state_dict() and model.state_dict()[k].shape == v.shape:
-            dic[k] = v
-            restor_num += 1
-        else:
-            ommit_num += 1
-
-    print("Build model from", cfg)
-    print("Resotre weight from", weights)
-    print("Restore %d vars, ommit %d vars" % (restor_num, ommit_num))
-
-    ckpt['model'] = dic
-    model.load_state_dict(ckpt['model'], strict=False)
+    ckpt = torch.load(weights, map_location=device)['model']  # load checkpoint
+    model.load_state_dict(ckpt, strict=False)
     del ckpt
 
     model.float()
@@ -128,19 +108,17 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default="models/mobile-yolo5s_voc.yaml", type=str, help='*.cfg path')
-    parser.add_argument('--weights', default="/d/yolov5/runs/prune_test/weights/best.pt", type=str, help='*.data path')
-    parser.add_argument('--save-dir', default="/d/yolov5/weights", type=str, help='*.data path')
-    parser.add_argument('-p', '--prob', default=0.5, type=float, help='pruning prob')
+    parser.add_argument('--cfg', default="/home/laughing/yolov5/models/yolov5s.yaml", type=str, help='*.cfg path')
+    parser.add_argument('--weights', default="/home/laughing/yolov5/runs/prune/guiyang_spare2/weights/best.pt", type=str, help='*.data path')
+    parser.add_argument('--save-dir', default="/home/laughing/yolov5/weights", type=str, help='*.data path')
+    parser.add_argument('-p', '--prob', default=0.0, type=float, help='pruning prob')
     parser.add_argument('-t', '--thres', default=0, type=float, help='pruning thres')
     opt = parser.parse_args()
 
     save_dir = opt.save_dir
 
     device = torch.device('cpu')
-    # model = attempt_load(opt.weights, map_location=device, fuse=False)
-    ckpt = torch.load(opt.weights, map_location=device)  # load
-    model = ckpt['model'].float()
+    model = load_model(opt.cfg, opt.weights)  # load checkpoint
 
     example_inputs = torch.zeros((1, 3, 64, 64), dtype=torch.float32).to()
     # out = model(example_inputs)[0]
@@ -161,4 +139,8 @@ if __name__ == '__main__':
     pruned_model.model[-1].export = False
     save_path = os.path.join(save_dir, "pruned_"+str(prob).split(".")[-1] + ".pt")
     torch.save({"model": pruned_model.module if hasattr(pruned_model, 'module') else pruned_model}, save_path)
+
+    data = check_yaml('/home/laughing/yolov5/data/custom/guiyang_phone.yaml')
+    _ = run(data, model=pruned_model.cuda(), batch_size=8, imgsz=640, conf_thres=.001, iou_thres=.6,
+        device='0', save_json=False, plots=False, half=False)
 

@@ -313,6 +313,12 @@ if __name__ == '__main__':
 
     # Create model
     model = Model(opt.cfg).to(device)
+
+    for k, m in model.named_modules():
+        # print(k)
+        if isinstance(m, nn.BatchNorm2d):
+            print(m)
+
     model.train()
 
     # Profile

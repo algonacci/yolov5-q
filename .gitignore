@@ -24,6 +24,7 @@
 *.engine
 tensorrtx/build*
 scripts/config*
+*.out
 
 storage.googleapis.com
 runs/*
