@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from models.yolo import Model
 from utils.general import check_yaml
 from val_sparse import run
+from models.experimental import attempt_load
 
 
 def load_model(cfg="models/mobile-yolo5l_voc.yaml", weights="./outputs/mvoc/weights/best_mvoc.pt"):
@@ -47,15 +48,14 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
     model.cpu().eval()
 
     prunable_module_type = (nn.BatchNorm2d)
-
-    ignore_idx = [230, 260, 290]
-
     prunable_modules = []
-    for i, m in enumerate(model.modules()):
-        if i in ignore_idx:
-            continue
-        if isinstance(m, prunable_module_type):
-            prunable_modules.append(m)
+
+    for k, v in model.named_modules():
+        # if '.m' in k and '.cv2' in k:
+        #     continue
+        if isinstance(v, prunable_module_type):
+            prunable_modules.append(v)
+
     ori_size = tp.utils.count_params(model)
     DG = tp.DependencyGraph().build_dependency(model, example_inputs=example_inputs,
                                                output_transform=output_transform)
@@ -67,9 +67,11 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
         thres = bn_val[thres_pos]
     print("Min val is %f, Max val is %f, Thres is %f" % (bn_val[0], bn_val[-1], thres))
 
+    ignore_modules = []
     for layer_to_prune in prunable_modules:
         # select a layer
         weight = layer_to_prune.weight.data.detach().cpu().numpy()
+        bias = layer_to_prune.bias.data.detach().cpu().numpy()
         if isinstance(layer_to_prune, nn.Conv2d):
             if layer_to_prune.groups > 1:
                 prune_fn = tp.prune_group_conv
@@ -79,16 +81,29 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
         elif isinstance(layer_to_prune, nn.BatchNorm2d):
             prune_fn = tp.prune_batchnorm
             L1_norm = np.abs(weight)
+            bias_norm = np.abs(bias)
+
+        # TODO
+        # pruned_idx_mask = np.array(~((L1_norm < thres) * (bias_norm < thres)), 
+        #                            dtype=np.float32)
+        # layer_to_prune.weight = torch.nn.Parameter(torch.tensor(weight * pruned_idx_mask), 
+        #                                            requires_grad=False)
+        # layer_to_prune.bias = torch.nn.Parameter(torch.tensor(bias * pruned_idx_mask), 
+        #                                            requires_grad=False)
 
         pos = np.array([i for i in range(len(L1_norm))])
-        pruned_idx_mask = L1_norm < thres
+        # pruned_idx_mask = L1_norm < thres
+        pruned_idx_mask = (L1_norm < thres) * (bias_norm < thres)
         prun_index = pos[pruned_idx_mask].tolist()
         if len(prun_index) == len(L1_norm):
             del prun_index[np.argmax(L1_norm)]
 
-        plan = DG.get_pruning_plan(layer_to_prune, prune_fn, prun_index)
+        plan, ignore_module = DG.get_pruning_plan(layer_to_prune, prune_fn, prun_index)
+        ignore_modules += ignore_module
         plan.exec()
 
+    print(list(set(ignore_modules)))
+    print(len(list(set(ignore_modules))))
     bn_analyze(prunable_modules, "./after_pruning.jpg")
 
     with torch.no_grad():
@@ -109,16 +124,20 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default="/home/laughing/yolov5/models/yolov5s.yaml", type=str, help='*.cfg path')
-    parser.add_argument('--weights', default="/home/laughing/yolov5/runs/prune/guiyang_spare2/weights/best.pt", type=str, help='*.data path')
+    parser.add_argument('--weights', default="/home/laughing/yolov5/runs/prune/guiyang_spare3/weights/best.pt", type=str, help='*.data path')
     parser.add_argument('--save-dir', default="/home/laughing/yolov5/weights", type=str, help='*.data path')
-    parser.add_argument('-p', '--prob', default=0.0, type=float, help='pruning prob')
-    parser.add_argument('-t', '--thres', default=0, type=float, help='pruning thres')
+    parser.add_argument('-p', '--prob', default=0, type=float, help='pruning prob')
+    parser.add_argument('-t', '--thres', default=0.01, type=float, help='pruning thres')
     opt = parser.parse_args()
 
     save_dir = opt.save_dir
 
     device = torch.device('cpu')
     model = load_model(opt.cfg, opt.weights)  # load checkpoint
+    # model = attempt_load(opt.weights, map_location=device, fuse=False)
+    # for k, m in model.named_modules():
+    #     print(k)
+    # exit()
 
     example_inputs = torch.zeros((1, 3, 64, 64), dtype=torch.float32).to()
     # out = model(example_inputs)[0]

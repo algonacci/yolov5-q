@@ -315,9 +315,10 @@ if __name__ == '__main__':
     model = Model(opt.cfg).to(device)
 
     for k, m in model.named_modules():
-        # print(k)
-        if isinstance(m, nn.BatchNorm2d):
-            print(m)
+    # for k, m in model.named_children():
+        print(k)
+        # if isinstance(m, nn.BatchNorm2d):
+            # print(m)
 
     model.train()
 

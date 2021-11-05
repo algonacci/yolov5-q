@@ -331,7 +331,9 @@ class DependencyGraph(object):
         plan.add_plan(Dependency(pruning_fn, pruning_fn, root_node), idxs)
         
         visited = set()
+        node_list = []
         def _fix_denpendency_graph(node, fn, indices):
+            node_list.append(node)
             visited.add( node )
             for dep in node.dependencies:
                 if dep.is_triggered_by(fn): #and dep.broken_node not in visited:
@@ -350,10 +352,20 @@ class DependencyGraph(object):
         _fix_denpendency_graph(root_node, pruning_fn, idxs)
 
         # merge pruning ops
+        ignore_module = []
+        _node_names = [n._node_name for n in node_list if n._node_name is not None]
+        for i, node_t in enumerate(node_list):
+            n = node_t._node_name
+            if n is not None:
+                if '.m' in n and '.cv2' in n:
+                    plan._plans = []
+                    ignore_module += _node_names
+
+        # merge pruning ops
         merged_plan = PruningPlan()
         for dep, idxs in plan.plan:
             merged_plan.add_plan_and_merge( dep, idxs )
-        return merged_plan
+        return merged_plan, ignore_module
     
     def _build_dependency(self, module_to_node):
         for module, node in module_to_node.items():
