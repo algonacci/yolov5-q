@@ -505,8 +505,10 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
                     if k in ignore_modules:
                         continue
                     if isinstance(m, nn.BatchNorm2d):
-                        m.weight.grad.data.add_(0.04 * torch.sign(m.weight.data) / accumulate)
-                        m.bias.grad.data.add_(0.04 * torch.sign(m.bias.data) / accumulate)
+                        # m.weight.grad.data.add_(0.04 * torch.sign(m.weight.data) / accumulate)
+                        # m.bias.grad.data.add_(0.04 * torch.sign(m.bias.data) / accumulate)
+                        m.weight.grad.data.add_(0.005 * torch.sign(m.weight.data))
+                        m.bias.grad.data.add_(0.005 * torch.sign(m.bias.data))
                 # --------------------sparse---------------------------------------
                 scaler.step(optimizer)  # optimizer.step
                 scaler.update()

@@ -403,7 +403,7 @@ class ModelDetails:
 
 if __name__ == "__main__":
     CFG_FILE = "/home/laughing/yolov5/models/yolov5s.yaml"
-    MODEL_FILE = "/home/laughing/yolov5/runs/prune/guiyang_spare6/weights/best.pt"
+    MODEL_FILE = "/home/laughing/yolov5/runs/prune/guiyang_spare7/weights/best.pt"
 
     PRUNING_FILE = "/home/laughing/yolov5/weights/pruned_auto.pt"
 
@@ -425,8 +425,8 @@ if __name__ == "__main__":
 
     pruning = Pruning(model, (nn.BatchNorm2d,), ignore_modules=ignore_modules)
     pruned_model = pruning.pruning(thres=thres, check_only=False, weight_only=False)
-    pruning.compare()
+    # pruning.compare()
 
-    # data = check_yaml('/home/laughing/yolov5/data/custom/guiyang_phone.yaml')
-    # _ = run(data, model=pruned_model.cuda(), batch_size=8, imgsz=640, conf_thres=.001, iou_thres=.6,
-    #     device='0', save_json=False, plots=False, half=False)
+    data = check_yaml('/home/laughing/yolov5/data/custom/guiyang_phone.yaml')
+    _ = run(data, model=pruned_model.cuda(), batch_size=8, imgsz=640, conf_thres=.001, iou_thres=.6,
+        device='0', save_json=False, plots=False, half=False)
