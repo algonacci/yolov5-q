@@ -156,26 +156,6 @@ IScaleLayer* addBatchNorm2d(INetworkDefinition *network, std::map<std::string, W
     return scale_1;
 }
 
-ILayer* FconvBlock(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, ITensor& input, int outch, int ksize, int s, int g, std::string lname) {
-    Weights emptywts{ DataType::kFLOAT, nullptr, 0 };
-    int p = ksize / 3;
-    IScaleLayer* normdata = normalize(network, input);
-    IConvolutionLayer* conv1 = network->addConvolutionNd(*normdata->getOutput(0), outch, DimsHW{ ksize, ksize }, weightMap[lname + ".conv.weight"], emptywts);
-
-    assert(conv1);
-    conv1->setStrideNd(DimsHW{ s, s });
-    conv1->setPaddingNd(DimsHW{ p, p });
-    conv1->setNbGroups(g);
-    IScaleLayer* bn1 = addBatchNorm2d(network, weightMap, *conv1->getOutput(0), lname + ".bn", 1e-3);
-
-    // silu = x * sigmoid
-    auto sig = network->addActivation(*bn1->getOutput(0), ActivationType::kSIGMOID);
-    assert(sig);
-    auto ew = network->addElementWise(*bn1->getOutput(0), *sig->getOutput(0), ElementWiseOperation::kPROD);
-    assert(ew);
-    return ew;
-}
-
 IScaleLayer* normalize(INetworkDefinition *network, ITensor& input) {
     int len = 3;
 
@@ -202,6 +182,27 @@ IScaleLayer* normalize(INetworkDefinition *network, ITensor& input) {
     assert(scale_n);
     return scale_n;
 }
+
+ILayer* FconvBlock(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, ITensor& input, int outch, int ksize, int s, int g, std::string lname) {
+    Weights emptywts{ DataType::kFLOAT, nullptr, 0 };
+    int p = ksize / 3;
+    IScaleLayer* normdata = normalize(network, input);
+    IConvolutionLayer* conv1 = network->addConvolutionNd(*normdata->getOutput(0), outch, DimsHW{ ksize, ksize }, weightMap[lname + ".conv.weight"], emptywts);
+
+    assert(conv1);
+    conv1->setStrideNd(DimsHW{ s, s });
+    conv1->setPaddingNd(DimsHW{ p, p });
+    conv1->setNbGroups(g);
+    IScaleLayer* bn1 = addBatchNorm2d(network, weightMap, *conv1->getOutput(0), lname + ".bn", 1e-3);
+
+    // silu = x * sigmoid
+    auto sig = network->addActivation(*bn1->getOutput(0), ActivationType::kSIGMOID);
+    assert(sig);
+    auto ew = network->addElementWise(*bn1->getOutput(0), *sig->getOutput(0), ElementWiseOperation::kPROD);
+    assert(ew);
+    return ew;
+}
+
 
 
 ILayer* convBlock(INetworkDefinition *network, std::map<std::string, Weights>& weightMap, ITensor& input, int outch, int ksize, int s, int g, std::string lname) {

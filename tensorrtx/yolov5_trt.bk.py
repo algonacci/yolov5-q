@@ -403,7 +403,7 @@ class warmUpThread(threading.Thread):
 if __name__ == "__main__":
     # load custom plugin and engine
     PLUGIN_LIBRARY = "./tensorrtx/build_play/libmyplugins.so"
-    engine_file_path = "/home/laughing/yolov5/runs/play_phone/weights/best.engine"
+    engine_file_path = "/home/laughing/yolov5/runs/custom/play_phone/weights/best.engine"
     engine_file_path1 = "/home/laughing/yolov5/tensorrtx/build/yolov5n.engine"
     # PLUGIN_LIBRARY = "./tensorrtx/test/libmyplugins.so"
     # engine_file_path = "./tensorrtx/test/yolov5n.engine"
