@@ -14,7 +14,7 @@ import pycuda.autoinit
 import pycuda.driver as cuda
 import tensorrt as trt
 
-CONF_THRESH = 0.5
+CONF_THRESH = 0.1
 IOU_THRESHOLD = 0.4
 
 
@@ -233,7 +233,7 @@ class YoLov5TRT(object):
         image = cv2.resize(image, (tw, th))
         # Pad the short side with (128,128,128)
         image = cv2.copyMakeBorder(
-            image, ty1, ty2, tx1, tx2, cv2.BORDER_CONSTANT, (128, 128, 128)
+            image, ty1, ty2, tx1, tx2, cv2.BORDER_CONSTANT, (114, 114, 114)
         )
         image = image.astype(np.float32)
         # Normalize to [0,1]
@@ -406,8 +406,10 @@ if __name__ == "__main__":
     # engine_file_path = "/home/laughing/yolov5/runs/play_phone/weights/best.engine"
     # PLUGIN_LIBRARY = "./tensorrtx/build/libmyplugins.so"
     # engine_file_path = "./tensorrtx/build/yolov5n.engine"
-    PLUGIN_LIBRARY = "./tensorrtx/builds/libmyplugins.so"
-    engine_file_path = "./tensorrtx/builds/yolov5s.engine"
+    # PLUGIN_LIBRARY = "./tensorrtx/builds/libmyplugins.so"
+    # engine_file_path = "./tensorrtx/builds/yolov5s.engine"
+    PLUGIN_LIBRARY = "./tensorrtx/build_person_head/libmyplugins.so"
+    engine_file_path = "/home/laughing/yolov5/runs/guiyang/person_head_in_n_11127/weights/best.engine"
 
     if len(sys.argv) > 1:
         engine_file_path = sys.argv[1]
@@ -437,7 +439,7 @@ if __name__ == "__main__":
     try:
         print('batch size is', yolov5_wrapper.batch_size)
         
-        image_dir = "/e/datasets/phone_all/phone0528_temp/images/val"
+        image_dir = "/home/laughing/yolov5/tensorrtx/samples"
         image_path_batches = get_img_path_batches(yolov5_wrapper.batch_size, image_dir)
 
         for i in range(10):
