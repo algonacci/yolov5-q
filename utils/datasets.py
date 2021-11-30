@@ -23,7 +23,7 @@ import torch
 import torch.nn.functional as F
 import yaml
 from PIL import Image, ImageOps, ExifTags
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, distributed
 from utils.general import colorstr
 from tqdm import tqdm
 from utils.paste import paste1
@@ -146,10 +146,16 @@ def create_dataloader(
     image_weights=False,
     quad=False,
     prefix="",
+    shuffle=False,
     neg_dir="",
     bg_dir="",
     area_thr=0.2,
 ):
+    if rect and shuffle:
+        print(
+            "WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False"
+        )
+        shuffle = False
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
     with torch_distributed_zero_first(rank):
         dataset = LoadImagesAndLabels(
@@ -175,14 +181,15 @@ def create_dataloader(
         [os.cpu_count(), batch_size if batch_size > 1 else 0, workers]
     )  # number of workers
     sampler = (
-        torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
+        distributed.DistributedSampler(dataset, shuffle=shuffle) if rank != -1 else None
     )
-    loader = torch.utils.data.DataLoader if image_weights else InfiniteDataLoader
+    loader = DataLoader if image_weights else InfiniteDataLoader
     # Use torch.utils.data.DataLoader() if dataset.properties will update during training else InfiniteDataLoader()
     dataloader = loader(
         dataset,
         batch_size=batch_size,
         num_workers=nw,
+        shuffle=shuffle and sampler is None,
         sampler=sampler,
         pin_memory=True,
         collate_fn=LoadImagesAndLabels.collate_fn4
@@ -937,18 +944,20 @@ def load_neg_image(self, index):
         img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
     return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
 
+
 def load_bg_image(self, index):
     path = self.img_files[index]
     bg_path = self.img_bg_files[np.random.randint(0, len(self.img_bg_files))]
-    img, coord, _, (w, h) = paste1(path, bg_path, bg_size=self.img_size, 
-                                   fg_scale=random.uniform(1.5, 5))
+    img, coord, _, (w, h) = paste1(
+        path, bg_path, bg_size=self.img_size, fg_scale=random.uniform(1.5, 5)
+    )
     label = self.labels[index]
     label[:, 1] = (label[:, 1] * w + coord[0]) / img.shape[1]
     label[:, 2] = (label[:, 2] * h + coord[1]) / img.shape[0]
     label[:, 3] = label[:, 3] * w / img.shape[1]
     label[:, 4] = label[:, 4] * h / img.shape[0]
 
-    assert img is not None, 'Image Not Found ' + path
+    assert img is not None, "Image Not Found " + path
     h0, w0 = img.shape[:2]  # orig hw
     r = self.img_size / max(h0, w0)  # resize image to img_size
     if r != 1:  # always resize down, only resize up if training with augmentation

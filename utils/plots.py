@@ -401,16 +401,20 @@ def plot_results(file='path/to/results.csv', dir=''):
     ax = ax.ravel()
     files = list(save_dir.glob('results*.csv'))
     assert len(files), f'No results.csv files found in {save_dir.resolve()}, nothing to plot.'
-    for fi, f in enumerate(files):
+    for _, f in enumerate(files):
         try:
             data = pd.read_csv(f)
+            index = np.argmax(0.9 * data.values[:, 7] + 0.1 * data.values[:, 6])
             s = [x.strip() for x in data.columns]
             x = data.values[:, 0]
             for i, j in enumerate([1, 2, 3, 4, 5, 8, 9, 10, 6, 7]):
                 y = data.values[:, j]
                 # y[y == 0] = np.nan  # don't show zero values
-                ax[i].plot(x, y, marker='.', label=f.stem, linewidth=2, markersize=8)
+                ax[i].plot(x, y, marker='.', label=f.stem, linewidth=2, markersize=2)
                 ax[i].set_title(s[j], fontsize=12)
+                ax[i].scatter(index, y[index], color='r',
+                              label='best', marker='*', linewidth=3)
+                ax[i].set_title(s[i] + f'\n{round(y[index], 5)}')
                 # if j in [8, 9, 10]:  # share train and val loss y axes
                 #     ax[i].get_shared_y_axes().join(ax[i], ax[i - 5])
         except Exception as e:
@@ -420,6 +424,7 @@ def plot_results(file='path/to/results.csv', dir=''):
     plt.close()
 
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
+    import random
     # Plots one bounding box on image img
     tl = line_thickness or round(
         0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness

@@ -211,6 +211,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                               hyp=hyp, augment=True, cache=opt.cache, rect=opt.rect, rank=LOCAL_RANK,
                                               workers=workers, image_weights=opt.image_weights, quad=opt.quad,
                                               prefix=colorstr('train: '), 
+                                              shuffle=True,
                                               neg_dir=opt.neg_dir,
                                               bg_dir=opt.bg_dir,
                                               area_thr=opt.area_thr)
