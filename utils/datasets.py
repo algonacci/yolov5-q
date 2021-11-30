@@ -16,6 +16,10 @@ from multiprocessing.pool import ThreadPool, Pool
 from pathlib import Path
 from threading import Thread
 from zipfile import ZipFile
+from functools import wraps
+from typing import Optional
+import itertools
+import uuid
 
 import cv2
 import numpy as np
@@ -23,7 +27,12 @@ import torch
 import torch.nn.functional as F
 import yaml
 from PIL import Image, ImageOps, ExifTags
-from torch.utils.data import Dataset, DataLoader, distributed
+from torch.utils.data import DataLoader as torchDataLoader
+from torch.utils.data import distributed
+from torch.utils.data import Dataset as torchDataset
+from torch.utils.data.sampler import BatchSampler as torchBatchSampler
+from torch.utils.data.sampler import Sampler, RandomSampler
+import torch.distributed as dist
 from utils.general import colorstr
 from tqdm import tqdm
 from utils.paste import paste1
@@ -130,7 +139,14 @@ def exif_transpose(image):
     return image
 
 
-def create_dataloader(
+def worker_init_reset_seed(worker_id):
+    seed = uuid.uuid4().int % 2 ** 32
+    random.seed(seed)
+    torch.set_rng_state(torch.manual_seed(seed).get_state())
+    np.random.seed(seed)
+
+
+def create_dataloader_ori(
     path,
     imgsz,
     batch_size,
@@ -197,6 +213,211 @@ def create_dataloader(
         else LoadImagesAndLabels.collate_fn,
     )
     return dataloader, dataset
+
+
+def create_dataloader(
+    path,
+    imgsz,
+    batch_size,
+    stride,
+    single_cls=False,
+    hyp=None,
+    augment=False,
+    cache=False,
+    pad=0.0,
+    rect=False,
+    rank=-1,
+    workers=8,
+    image_weights=False,
+    quad=False,
+    prefix="",
+    shuffle=False,
+    neg_dir="",
+    bg_dir="",
+    area_thr=0.2,
+):
+    if rect and shuffle:
+        print(
+            "WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False"
+        )
+        shuffle = False
+    # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
+    with torch_distributed_zero_first(rank):
+        dataset = LoadImagesAndLabels(
+            path,
+            imgsz,
+            batch_size,
+            augment=augment,  # augment images
+            hyp=hyp,  # augmentation hyperparameters
+            rect=rect,  # rectangular training
+            cache_images=cache,
+            single_cls=single_cls,
+            stride=int(stride),
+            pad=pad,
+            image_weights=image_weights,
+            prefix=prefix,
+            neg_dir=neg_dir,
+            bg_dir=bg_dir,
+            area_thr=area_thr,
+        )
+
+    batch_size = min(batch_size, len(dataset))
+    nw = min(
+        [os.cpu_count(), batch_size if batch_size > 1 else 0, workers]
+    )  # number of workers
+    # sampler = InfiniteSampler(len(dataset), seed=0)
+    sampler = (
+        distributed.DistributedSampler(dataset, shuffle=shuffle)
+        if rank != -1
+        else RandomSampler(dataset)
+    )
+
+    batch_sampler = YoloBatchSampler(
+        sampler=sampler,
+        batch_size=batch_size,
+        drop_last=False,
+        augment=augment,
+    )
+    dataloader = DataLoader(
+        dataset,
+        num_workers=nw,
+        batch_sampler=batch_sampler,
+        pin_memory=True,
+        collate_fn=LoadImagesAndLabels.collate_fn4
+        if quad
+        else LoadImagesAndLabels.collate_fn,
+        worker_init_fn=worker_init_reset_seed,
+    )
+    return dataloader, dataset
+
+
+class DataLoader(torchDataLoader):
+    """
+    Lightnet dataloader that enables on the fly resizing of the images.
+    See :class:`torch.utils.data.DataLoader` for more information on the arguments.
+    Check more on the following website:
+    https://gitlab.com/EAVISE/lightnet/-/blob/master/lightnet/data/_dataloading.py
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def close_augment(self):
+        self.batch_sampler.augment = False
+
+
+class YoloBatchSampler(torchBatchSampler):
+    """
+    This batch sampler will generate mini-batches of (mosaic, index) tuples from another sampler.
+    It works just like the :class:`torch.utils.data.sampler.BatchSampler`,
+    but it will turn on/off the mosaic aug.
+    """
+
+    def __init__(self, *args, augment=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.augment = augment
+
+    def __iter__(self):
+        for batch in super().__iter__():
+            yield [(self.augment, idx) for idx in batch]
+
+
+class InfiniteSampler(Sampler):
+    """
+    In training, we only care about the "infinite stream" of training data.
+    So this sampler produces an infinite stream of indices and
+    all workers cooperate to correctly shuffle the indices and sample different indices.
+    The samplers in each worker effectively produces `indices[worker_id::num_workers]`
+    where `indices` is an infinite stream of indices consisting of
+    `shuffle(range(size)) + shuffle(range(size)) + ...` (if shuffle is True)
+    or `range(size) + range(size) + ...` (if shuffle is False)
+    """
+
+    def __init__(
+        self,
+        size: int,
+        shuffle: bool = True,
+        seed: Optional[int] = 0,
+        rank=0,
+        world_size=1,
+    ):
+        """
+        Args:
+            size (int): the total number of data of the underlying dataset to sample from
+            shuffle (bool): whether to shuffle the indices or not
+            seed (int): the initial seed of the shuffle. Must be the same
+                across all workers. If None, will use a random seed shared
+                among workers (require synchronization among all workers).
+        """
+        self._size = size
+        assert size > 0
+        self._shuffle = shuffle
+        self._seed = int(seed)
+
+        if dist.is_available() and dist.is_initialized():
+            self._rank = dist.get_rank()
+            self._world_size = dist.get_world_size()
+        else:
+            self._rank = rank
+            self._world_size = world_size
+
+    def __iter__(self):
+        start = self._rank
+        yield from itertools.islice(
+            self._infinite_indices(), start, None, self._world_size
+        )
+
+    def _infinite_indices(self):
+        g = torch.Generator()
+        g.manual_seed(self._seed)
+        while True:
+            if self._shuffle:
+                yield from torch.randperm(self._size, generator=g)
+            else:
+                yield from torch.arange(self._size)
+
+    def __len__(self):
+        return self._size // self._world_size
+
+
+class Dataset(torchDataset):
+    """This class is a subclass of the base :class:`torch.utils.data.Dataset`,
+    that enables on the fly resizing of the ``input_dim``.
+
+    Args:
+        input_dimension (tuple): (width,height) tuple with default dimensions of the network
+    """
+
+    def __init__(self, augment=True):
+        super().__init__()
+        self.augment = augment
+
+    @staticmethod
+    def mosaic_getitem(getitem_fn):
+        """
+        Decorator method that needs to be used around the ``__getitem__`` method. |br|
+        This decorator enables the closing mosaic
+
+        Example:
+            >>> class CustomSet(ln.data.Dataset):
+            ...     def __len__(self):
+            ...         return 10
+            ...     @ln.data.Dataset.mosaic_getitem
+            ...     def __getitem__(self, index):
+            ...         return self.enable_mosaic
+        """
+
+        @wraps(getitem_fn)
+        def wrapper(self, index):
+            if not isinstance(index, int):
+                self.augment = index[0]
+                index = index[1]
+
+            ret_val = getitem_fn(self, index)
+
+            return ret_val
+
+        return wrapper
 
 
 class InfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
@@ -519,8 +740,8 @@ class LoadImagesAndLabels(Dataset):
         bg_dir="",
         area_thr=0.2,
     ):
+        super().__init__(augment=augment)
         self.img_size = img_size
-        self.augment = augment
         self.hyp = hyp
         self.image_weights = image_weights
         self.rect = False if image_weights else rect
@@ -764,10 +985,12 @@ class LoadImagesAndLabels(Dataset):
     #     #self.shuffled_vector = np.random.permutation(self.nF) if self.augment else np.arange(self.nF)
     #     return self
 
+    @Dataset.mosaic_getitem
     def __getitem__(self, index):
         index = self.indices[index]  # linear, shuffled, or image_weights
 
         hyp = self.hyp
+        self.mosaic = self.augment and not self.rect
         mosaic = self.mosaic and random.random() < hyp["mosaic"]
         if mosaic:
             # Load mosaic

@@ -36,7 +36,7 @@ import val  # for end-of-epoch mAP
 from models.experimental import attempt_load
 from models.yolo import Model
 from utils.autoanchor import check_anchors
-from utils.datasets import create_dataloader
+from utils.datasets import create_dataloader, create_dataloader_ori
 from utils.general import labels_to_class_weights, increment_path, labels_to_image_weights, init_seeds, \
     strip_optimizer, get_latest_run, check_dataset, check_git_status, check_img_size, check_requirements, \
     check_file, check_yaml, check_suffix, print_args, print_mutation, set_logging, one_cycle, colorstr, methods
@@ -61,9 +61,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
           device,
           callbacks
           ):
-    save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze, = \
+    save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze, no_aug_epochs = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
-        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
+        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze, opt.no_aug_epochs
 
     # Directories
     w = save_dir / 'weights'  # weights dir
@@ -221,7 +221,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
     # Process 0
     if RANK in [-1, 0]:
-        val_loader = create_dataloader(val_path, imgsz, batch_size // WORLD_SIZE * 2, gs, single_cls,
+        val_loader = create_dataloader_ori(val_path, imgsz, batch_size // WORLD_SIZE * 2, gs, single_cls,
                                        hyp=hyp, cache=None if noval else opt.cache, rect=True, rank=-1,
                                        workers=workers, pad=0.5,
                                        prefix=colorstr('val: '))[0]
@@ -270,8 +270,15 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 f'Using {train_loader.num_workers} dataloader workers\n'
                 f"Logging results to {colorstr('bold', save_dir)}\n"
                 f'Starting training for {epochs} epochs...')
+    plot_idx = [0, 1, 2]
+    if no_aug_epochs > 0:
+        base_idx = (epochs - no_aug_epochs) * nb
+        plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
+        if epoch >=(epochs - no_aug_epochs) :
+            train_loader.close_augment()
+            # dataset.augment = False
 
         # Update image weights (optional, single-GPU only)
         if opt.image_weights:
@@ -341,7 +348,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 pbar.set_description(('%10s' * 2 + '%10.4g' * 5) % (
                     f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots, opt.sync_bn)
+                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots, opt.sync_bn, plot_idx)
             # end batch ------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -481,6 +488,7 @@ def parse_opt(known=False):
     parser.add_argument('--neg-dir', type=str, default='', help='negative dir')
     parser.add_argument('--bg-dir', type=str, default='', help='background dir')
     parser.add_argument('--area-thr', nargs='+', type=float, default=0.2, help='box after augment / origin box areas')
+    parser.add_argument('--no-aug-epochs', type=int, default=15, help='box after augment / origin box areas')
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
     return opt
