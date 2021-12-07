@@ -604,5 +604,9 @@ if __name__ == "__main__":
         k = unparsed[i][2:]
         v = unparsed[i + 1]
         # setattr(opt, k, v)
+        try:
+            v = eval(v)
+        except:
+            pass
         OmegaConf.update(opt, k, v)
     main(opt)

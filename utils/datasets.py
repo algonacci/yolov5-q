@@ -281,12 +281,15 @@ def create_dataloader(
     dataloader = DataLoader(
         dataset,
         num_workers=nw,
+        # batch_size=batch_size,
         batch_sampler=batch_sampler,
         pin_memory=True,
         collate_fn=LoadImagesAndLabels.collate_fn4
         if quad
         else LoadImagesAndLabels.collate_fn,
-        worker_init_fn=worker_init_reset_seed,
+        # Make sure each process has different random seed, especially for 'fork' method.
+        # Check https://github.com/pytorch/pytorch/issues/63311 for more details.
+        # worker_init_fn=worker_init_reset_seed,
     )
     return dataloader, dataset
 
