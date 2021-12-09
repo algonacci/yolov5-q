@@ -148,8 +148,8 @@ class YoLov5TRT(object):
         batch_input_image = np.ascontiguousarray(batch_input_image)
 
         # Copy input image to host buffer
-        start = time.time()
         np.copyto(host_inputs[0], batch_input_image.ravel())
+        start = time.time()
         # Transfer input data  to the GPU.
         cuda.memcpy_htod_async(cuda_inputs[0], host_inputs[0], stream)
         # Run inference.
@@ -402,14 +402,25 @@ class warmUpThread(threading.Thread):
 
 if __name__ == "__main__":
     # load custom plugin and engine
+    # ---------s---------
     # PLUGIN_LIBRARY = "./tensorrtx/build_play/libmyplugins.so"
-    # engine_file_path = "/home/laughing/yolov5/runs/play_phone/weights/best.engine"
-    # PLUGIN_LIBRARY = "./tensorrtx/build/libmyplugins.so"
-    # engine_file_path = "./tensorrtx/build/yolov5n.engine"
-    # PLUGIN_LIBRARY = "./tensorrtx/builds/libmyplugins.so"
-    # engine_file_path = "./tensorrtx/builds/yolov5s.engine"
-    PLUGIN_LIBRARY = "./tensorrtx/build_person_head/libmyplugins.so"
-    engine_file_path = "/home/laughing/yolov5/runs/guiyang/person_head_in_n_11127/weights/best.engine"
+    # engine_file_path = "./runs/custom/play_phone/weights/best.engine"  # 640x384, 504, 4%, 2.5ms~, 1.8ms~(without copy img from host to device)
+
+    # PLUGIN_LIBRARY = "./tensorrtx/build_play640/libmyplugins.so"
+    # engine_file_path = "./runs/custom/play_phone/weights/best640.engine"  # 640x640, 514, 5~6%, 3.5ms~, 2.5ms~
+
+    # PLUGIN_LIBRARY = "./tensorrtx/build_play416/libmyplugins.so"
+    # engine_file_path = "./runs/custom/play_phone/weights/best416.engine"  # 416x256, 492, 3~4%, 1.5ms~, 1.2ms~
+
+    # ---------n---------
+    # PLUGIN_LIBRARY = "./tensorrtx/buildn/libmyplugins.so"
+    # engine_file_path = "./tensorrtx/buildn/yolov5n.engine"  # 640x384, 480, 3~4%更偏向与4%, 2.5ms~, 1.65ms~
+
+    # PLUGIN_LIBRARY = "./tensorrtx/buildn640/libmyplugins.so"
+    # engine_file_path = "./tensorrtx/buildn640/yolov5n.engine"  # 640x640, 480, 4~5%, 3.5ms~, 2.1ms~
+
+    # PLUGIN_LIBRARY = "./tensorrtx/build_play416/libmyplugins.so"
+    # engine_file_path = "./runs/custom/play_phone/weights/best416.engine"  # 416x256, 492, 3~4%更偏向与3%, 1.5ms~, 1.2ms~
 
     if len(sys.argv) > 1:
         engine_file_path = sys.argv[1]
@@ -439,7 +450,7 @@ if __name__ == "__main__":
     try:
         print('batch size is', yolov5_wrapper.batch_size)
         
-        image_dir = "/home/laughing/yolov5/tensorrtx/samples"
+        image_dir = "/e/datasets/phone_all/phone0625/play_phone/images/val"
         image_path_batches = get_img_path_batches(yolov5_wrapper.batch_size, image_dir)
 
         for i in range(10):
