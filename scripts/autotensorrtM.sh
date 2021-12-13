@@ -18,6 +18,7 @@ for i; do
 	width="$(awk -F '=' '/^width/ {print $2}' "$config")"
 	height="$(awk -F '=' '/^height/ {print $2}' "$config")"
 	class="$(awk -F '=' '/^class/ {print $2}' "$config")"
+	batch="$(awk -F '=' '/^batch/ {print $2}' "$config")"
 	pt="$(awk -F '=' '/^pt_path/ {print $2}' "$config")"
 	type="$(awk -F '=' '/^model_type/ {print $2}' "$config")"
 	engine="$(awk -F '=' '/^engine_path/ {print $2}' "$config")"
@@ -30,14 +31,18 @@ for i; do
 	[[ -z "$width" ]] && echo "Please check $config, there is no \"width\"..." && continue
 	[[ -z "$height" ]] && echo "Please check $config, there is no \"height\"..." && continue
 	[[ -z "$class" ]] && echo "Please check $config, there is no \"class\"..." && continue
+	# [[ -z "$batch" ]] && echo "Please check $config, there is no \"batch\"..." && continue
 	[[ -z "$pt" ]] && echo "Please check $config, there is no \"pt_path\"..." && continue
 	[[ -z "$engine" ]] && echo "Please check $config, there is no \"engine_path\"..." && continue
 	[[ -z "$tensorrtx" ]] && echo "Please check $config, there is no \"tensorrtx_dir\"..." && continue
 	[[ -z "$build" ]] && echo "Please check $config, there is no \"build_dir\"..." && continue
 
+	[[ -z "$batch" ]] && batch=1 && echo "There is no \"batch\"...use \"1\" as default."
+
 	# check exist
 	[[ ! (-d "$tensorrtx") ]] && echo "$tensorrtx does not exist." && continue
 	[[ ! (-f "$tensorrtx/yololayer.h") ]] && echo "$tensorrtx/yololayer.h does not exist." && exit 1
+	[[ ! (-f "$tensorrtx/yolov5.cpp") ]] && echo "$tensorrtx/yolov5.cpp does not exist." && exit 1
 	[[ -d "$(dirname "$engine")" ]] || mkdir -p "$(dirname "$engine")"
 	#
 	echo "model type: $type"
@@ -53,6 +58,7 @@ for i; do
 	sed -i "/^\s*static constexpr int INPUT_W/s/[0-9]\+/$width/" "$tensorrtx/yololayer.h"
 	sed -i "/^\s*static constexpr int INPUT_H/s/[0-9]\+/$height/" "$tensorrtx/yololayer.h"
 	sed -i "/^\s*static constexpr int CLASS_NUM/s/[0-9]\+/$class/" "$tensorrtx/yololayer.h"
+  sed -i "/^#define BATCH_SIZE/s/[0-9]\+/$batch/" "$tensorrtx/yolov5.cpp"
 
 	[[ -d "$build" ]] && echo "\"$build\" existed, Clearing it!" &&
 		rm -rf "$build" && echo '-------------------------------------------'

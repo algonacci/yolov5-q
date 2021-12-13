@@ -148,8 +148,8 @@ class YoLov5TRT(object):
         batch_input_image = np.ascontiguousarray(batch_input_image)
 
         # Copy input image to host buffer
-        np.copyto(host_inputs[0], batch_input_image.ravel())
         start = time.time()
+        np.copyto(host_inputs[0], batch_input_image.ravel())
         # Transfer input data  to the GPU.
         cuda.memcpy_htod_async(cuda_inputs[0], host_inputs[0], stream)
         # Run inference.
@@ -164,20 +164,20 @@ class YoLov5TRT(object):
         # Here we use the first row of output in that batch_size = 1
         output = host_outputs[0]
         # Do postprocess
-        for i in range(self.batch_size):
-            result_boxes, result_scores, result_classid = self.post_process(
-                output[i * 6001: (i + 1) * 6001], batch_origin_h[i], batch_origin_w[i]
-            )
-            # Draw rectangles and labels on the original image
-            for j in range(len(result_boxes)):
-                box = result_boxes[j]
-                plot_one_box(
-                    box,
-                    batch_image_raw[i],
-                    label="{}:{:.2f}".format(
-                        categories[int(result_classid[j])], result_scores[j]
-                    ),
-                )
+        # for i in range(self.batch_size):
+        #     result_boxes, result_scores, result_classid = self.post_process(
+        #         output[i * 6001: (i + 1) * 6001], batch_origin_h[i], batch_origin_w[i]
+        #     )
+        #     # Draw rectangles and labels on the original image
+        #     for j in range(len(result_boxes)):
+        #         box = result_boxes[j]
+        #         plot_one_box(
+        #             box,
+        #             batch_image_raw[i],
+        #             label="{}:{:.2f}".format(
+        #                 categories[int(result_classid[j])], result_scores[j]
+        #             ),
+        #         )
         return batch_image_raw, end - start
 
     def destroy(self):
@@ -385,7 +385,7 @@ class inferThread(threading.Thread):
             parent, filename = os.path.split(img_path)
             save_name = os.path.join('output', filename)
             # Save image
-            cv2.imwrite(save_name, batch_image_raw[i])
+            # cv2.imwrite(save_name, batch_image_raw[i])
         print('input->{}, time->{:.2f}ms, saving into output/'.format(self.image_path_batch, use_time * 1000))
 
 
@@ -403,8 +403,8 @@ class warmUpThread(threading.Thread):
 if __name__ == "__main__":
     # load custom plugin and engine
     # ---------s---------
-    # PLUGIN_LIBRARY = "./tensorrtx/build_play/libmyplugins.so"
-    # engine_file_path = "./runs/custom/play_phone/weights/best.engine"  # 640x384, 504, 4%, 2.5ms~, 1.8ms~(without copy img from host to device)
+    PLUGIN_LIBRARY = "./tensorrtx/build_play/libmyplugins.so"
+    engine_file_path = "./runs/custom/play_phone/weights/best.engine"  # 640x384, 504, 4%, 2.5ms~, 1.8ms~(without copy img from host to device)
 
     # PLUGIN_LIBRARY = "./tensorrtx/build_play640/libmyplugins.so"
     # engine_file_path = "./runs/custom/play_phone/weights/best640.engine"  # 640x640, 514, 5~6%, 3.5ms~, 2.5ms~
@@ -422,12 +422,14 @@ if __name__ == "__main__":
     # PLUGIN_LIBRARY = "./tensorrtx/build_play416/libmyplugins.so"
     # engine_file_path = "./runs/custom/play_phone/weights/best416.engine"  # 416x256, 492, 3~4%更偏向与3%, 1.5ms~, 1.2ms~
 
+    PLUGIN_LIBRARY = "./tensorrtx/builds_2/libmyplugins.so"
+    engine_file_path = "./tensorrtx/builds_2/yolov5s.engine"  # 640x384, 518, 5~6%, 4.3ms~, 2.75ms~
+
     if len(sys.argv) > 1:
         engine_file_path = sys.argv[1]
     if len(sys.argv) > 2:
         PLUGIN_LIBRARY = sys.argv[2]
 
-    ctypes.CDLL('./tensorrtx/build/libmyplugins.so')
     ctypes.CDLL(PLUGIN_LIBRARY)
 
     # load coco labels

@@ -385,7 +385,7 @@ class inferThread(threading.Thread):
             parent, filename = os.path.split(img_path)
             save_name = os.path.join('output', filename)
             # Save image
-            cv2.imwrite(save_name, batch_image_raw[i])
+            # cv2.imwrite(save_name, batch_image_raw[i])
         print('input->{}, time->{:.2f}ms, saving into output/'.format(self.image_path_batch, use_time * 1000))
 
 
@@ -430,8 +430,8 @@ if __name__ == "__main__":
 
     if os.path.exists('output/'):
         shutil.rmtree('output/')
-    os.makedirs('output/')
-    os.makedirs('output1/')
+    os.makedirs('output/', exist_ok=True)
+    os.makedirs('output1/', exist_ok=True)
     # a YoLov5TRT instance
     yolov5_wrapper = YoLov5TRT(engine_file_path)
     yolov5_wrapper1 = YoLov5TRT(engine_file_path1)
@@ -441,28 +441,31 @@ if __name__ == "__main__":
         image_dir = "/e/datasets/phone_all/phone0528_temp/images/val"
         image_path_batches = get_img_path_batches(yolov5_wrapper.batch_size, image_dir)
 
-        for batch in image_path_batches:
-            batch_image_raw, use_time = yolov5_wrapper.infer(yolov5_wrapper.get_raw_image(batch))
-            batch_image_raw1, use_time1 = yolov5_wrapper1.infer(yolov5_wrapper1.get_raw_image(batch))
-            for i, img_path in enumerate(batch):
-                parent, filename = os.path.split(img_path)
-                save_name = os.path.join('output', filename)
-                save_name1 = os.path.join('output1', filename)
-                # Save image
-                cv2.imwrite(save_name, batch_image_raw[i])
-                cv2.imwrite(save_name1, batch_image_raw1[i])
-            print('input->{}, time->{:.2f}ms, saving into output/'.format(batch, use_time * 1000))
-
-        # for i in range(10):
-        #     # create a new thread to do warm_up
-        #     thread1 = warmUpThread(yolov5_wrapper)
-        #     thread1.start()
-        #     thread1.join()
         # for batch in image_path_batches:
-        #     # create a new thread to do inference
-        #     thread1 = inferThread(yolov5_wrapper, batch)
-        #     thread1.start()
-        #     thread1.join()
+        #     batch_image_raw, use_time = yolov5_wrapper.infer(yolov5_wrapper.get_raw_image(batch))
+        #     batch_image_raw1, use_time1 = yolov5_wrapper1.infer(yolov5_wrapper1.get_raw_image(batch))
+        #     for i, img_path in enumerate(batch):
+        #         parent, filename = os.path.split(img_path)
+        #         save_name = os.path.join('output', filename)
+        #         save_name1 = os.path.join('output1', filename)
+        #         # Save image
+        #         cv2.imwrite(save_name, batch_image_raw[i])
+        #         cv2.imwrite(save_name1, batch_image_raw1[i])
+        #     print('input->{}, time->{:.2f}ms, saving into output/'.format(batch, use_time * 1000))
+
+        for i in range(10):
+            # create a new thread to do warm_up
+            thread1 = warmUpThread(yolov5_wrapper)
+            thread1.start()
+            thread1.join()
+        for batch in image_path_batches:
+            # create a new thread to do inference
+            thread1 = inferThread(yolov5_wrapper, batch)
+            thread2 = inferThread(yolov5_wrapper1, batch)
+            thread1.start()
+            thread2.start()
+            thread1.join()
+            thread2.join()
     finally:
         # destroy the instance
         yolov5_wrapper.destroy()

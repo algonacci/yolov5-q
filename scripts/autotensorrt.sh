@@ -12,6 +12,7 @@ echo "Reading config from \"$config\"..."
 width="$(awk -F '=' '/^width/ {print $2}' "$config")"
 height="$(awk -F '=' '/^height/ {print $2}' "$config")"
 class="$(awk -F '=' '/^class/ {print $2}' "$config")"
+batch="$(awk -F '=' '/^batch/ {print $2}' "$config")"
 pt="$(awk -F '=' '/^pt_path/ {print $2}' "$config")"
 type="$(awk -F '=' '/^model_type/ {print $2}' "$config")"
 engine="$(awk -F '=' '/^engine_path/ {print $2}' "$config")"
@@ -29,10 +30,13 @@ build="$tensorrtx/$build"
 [[ -n "$tensorrtx" ]] || (echo "Please check $config, there is no \"tensorrtx_dir\"..." && exit 1)
 [[ -n "$build" ]] || (echo "Please check $config, there is no \"build_dir\"..." && exit 1)
 
+[[ -n "$batch" ]] || (batch=1 && echo "There is no \"batch\"...use \"1\" as default.")
+
 # check exist
 [[ -d "$tensorrtx" ]] || (echo "$tensorrtx does not exist." && exit 1)
 [[ -f "$pt" ]] || (echo "$pt does not exist." && exit 1)
 [[ -f "$tensorrtx/yololayer.h" ]] || (echo "$tensorrtx/yololayer.h does not exist." && exit 1)
+[[ -f "$tensorrtx/yolov5.cpp" ]] || echo "$tensorrtx/yolov5.cpp does not exist." && exit 1
 [[ -d "$(dirname "$engine")" ]] || mkdir -p "$(dirname "$engine")"
 
 echo "model type: $type"
@@ -48,6 +52,7 @@ echo '-------------------------------------------'
 sed -i "/^\s*static constexpr int INPUT_W/s/[0-9]\+/$width/" "$tensorrtx/yololayer.h"
 sed -i "/^\s*static constexpr int INPUT_H/s/[0-9]\+/$height/" "$tensorrtx/yololayer.h"
 sed -i "/^\s*static constexpr int CLASS_NUM/s/[0-9]\+/$class/" "$tensorrtx/yololayer.h"
+sed -i "/^#define BATCH_SIZE/s/[0-9]\+/$batch/" "$tensorrtx/yolov5.cpp"
 
 if [[ -d "$build" ]]; then
 	echo "\"$build\" existed, Clear it?"
