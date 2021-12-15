@@ -458,6 +458,10 @@ if __name__ == "__main__":
             thread1 = warmUpThread(yolov5_wrapper)
             thread1.start()
             thread1.join()
+        """
+        这里开多线程速度更快是因为每次infer都要从本地读图片，多线程加速的是读图片的过程，对推理速度没有帮助;
+        测试过仅推理开不开多线程速度差不多，甚至开多线程更慢
+        """
         for batch in image_path_batches:
             # create a new thread to do inference
             thread1 = inferThread(yolov5_wrapper, batch)
