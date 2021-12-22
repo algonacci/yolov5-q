@@ -760,7 +760,7 @@ class LoadImagesAndLabels(Dataset):
         if os.path.isdir(neg_dir):
             logging.info(
                 colorstr("Negative dir: ")
-                + f"'{neg_dir}', using pictures from the dir as negative samples during training"
+                + f"'{neg_dir}', using {len(neg_dir)} pictures from the dir as negative samples during training"
             )
             self.img_neg_files = [os.path.join(neg_dir, i) for i in os.listdir(neg_dir)]
         else:
@@ -769,7 +769,7 @@ class LoadImagesAndLabels(Dataset):
         if os.path.isdir(bg_dir):
             logging.info(
                 colorstr("Background dir: ")
-                + f"{bg_dir}, using pictures from the dir as background during training"
+                + f"{bg_dir}, using {len(bg_dir)} pictures from the dir as background during training"
             )
             self.img_bg_files = [os.path.join(bg_dir, i) for i in os.listdir(bg_dir)]
         else:
