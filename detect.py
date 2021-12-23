@@ -57,6 +57,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         hide_conf=False,  # hide confidences
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
+        pause_det=False,
         ):
     pause = True
     source = str(source)
@@ -234,7 +235,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
             im0 = annotator.result()
             if view_img:
                 # cv2.imshow(str(p), im0)
-                if len(det):
+                if len(det) and pause_det:
                     pause = True
                 cv2.namedWindow('p', cv2.WINDOW_NORMAL)
                 cv2.imshow('p', im0)
@@ -299,6 +300,7 @@ def parse_opt():
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--pause-det', action='store_true', help='pasue the imshow when get some detections')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(FILE.stem, opt)
