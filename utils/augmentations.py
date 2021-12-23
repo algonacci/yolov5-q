@@ -348,6 +348,8 @@ def box_candidates(
         if isinstance(area_thr, list)
         else area_thr
     )
+    if isinstance(area_thr, list) and len(area_thr) == 1:
+        area_thr = area_thr[0]
     ar = np.maximum(w2 / (h2 + eps), h2 / (w2 + eps))  # aspect ratio
     return (
         (w2 > wh_thr)

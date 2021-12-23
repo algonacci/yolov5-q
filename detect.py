@@ -234,6 +234,8 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
             im0 = annotator.result()
             if view_img:
                 # cv2.imshow(str(p), im0)
+                if len(det):
+                    pause = True
                 cv2.namedWindow('p', cv2.WINDOW_NORMAL)
                 cv2.imshow('p', im0)
                 key = cv2.waitKey(0 if pause else 1)
