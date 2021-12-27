@@ -470,6 +470,7 @@ class LoadImages:
         else:
             raise Exception(f"ERROR: {p} does not exist")
 
+        # random.shuffle(files)
         images = [x for x in files if x.split(".")[-1].lower() in IMG_FORMATS]
         videos = [x for x in files if x.split(".")[-1].lower() in VID_FORMATS]
         ni, nv = len(images), len(videos)

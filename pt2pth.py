@@ -6,9 +6,9 @@ import os.path as osp
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--weight-path', type=str, default='/home/laughing/yolov5/weights/yolov5n.pt', help='pt weight path')
-parser.add_argument('--save-dir', type=str, default='/d/projects/workCode/guiyang_test/weights', help='dir to save pth and yaml file')
-parser.add_argument('--name', type=str, default='', help='dir to save pth and yaml file')
+parser.add_argument('-w', '--weight-path', type=str, default='/home/laughing/yolov5/weights/yolov5n.pt', help='pt weight path')
+parser.add_argument('-s', '--save-dir', type=str, default='/d/projects/workCode/guiyang_test/weights', help='dir to save pth and yaml file')
+parser.add_argument('-n', '--name', type=str, default='', help='dir to save pth and yaml file')
 parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
 
 opt = parser.parse_args()
