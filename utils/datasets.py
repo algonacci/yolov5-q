@@ -525,7 +525,7 @@ class LoadImages:
             self.count += 1
             img0 = cv2.imread(path)  # BGR
             assert img0 is not None, "Image Not Found " + path
-            print(f"image {self.count}/{self.nf} {path}: ", end="")
+            s = f'image {self.count}/{self.nf} {path}: '
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
@@ -534,7 +534,7 @@ class LoadImages:
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
 
-        return path, img, img0, self.cap
+        return path, img, img0, self.cap, s
 
     def new_video(self, path):
         self.frame = 0
@@ -572,7 +572,7 @@ class LoadWebcam:  # for inference
         # Print
         assert ret_val, f"Camera Error {self.pipe}"
         img_path = "webcam.jpg"
-        print(f"webcam {self.count}: ", end="")
+        s = f'webcam {self.count}: '
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride)[0]
@@ -581,7 +581,7 @@ class LoadWebcam:  # for inference
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
 
-        return img_path, img, img0, None
+        return img_path, img, img0, None, s
 
     def __len__(self):
         return 0

@@ -24,7 +24,10 @@ try:
 
     assert hasattr(wandb, '__version__')  # verify package import not local dir
     if pkg.parse_version(wandb.__version__) >= pkg.parse_version('0.12.2') and RANK in [0, -1]:
-        wandb_login_success = wandb.login(timeout=30)
+        try:
+            wandb_login_success = wandb.login(timeout=30)
+        except wandb.errors.UsageError:  # known non-TTY terminal issue
+            wandb_login_success = False
         if not wandb_login_success:
             wandb = None
 except (ImportError, AssertionError):
@@ -44,6 +47,7 @@ class Loggers():
                      'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',  # metrics
                      'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
                      'x/lr0', 'x/lr1', 'x/lr2']  # params
+        self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95',]
         for k in LOGGERS:
             setattr(self, k, None)  # init empty logger dictionary
         self.csv = True  # always log to csv
@@ -76,7 +80,7 @@ class Loggers():
         if self.wandb:
             self.wandb.log({"Labels": [wandb.Image(str(x), caption=x.name) for x in paths]})
 
-    def on_train_batch_end(self, ni, model, imgs, targets, paths, plots, sync_bn, plot_idx=None):
+    def on_train_batch_end(self, ni, model, imgs, targets, paths, plots, sync_bn):
         # Callback runs on train batch end
         if plots:
             if ni == 0:
@@ -84,12 +88,9 @@ class Loggers():
                     with warnings.catch_warnings():
                         warnings.simplefilter('ignore')  # suppress jit trace warning
                         self.tb.add_graph(torch.jit.trace(de_parallel(model), imgs[0:1], strict=False), [])
-            if plot_idx is not None and ni in plot_idx:
+            if ni < 3:
                 f = self.save_dir / f'train_batch{ni}.jpg'  # filename
                 Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
-            # if ni < 3:
-            #     f = self.save_dir / f'train_batch{ni}.jpg'  # filename
-            #     Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
             if self.wandb and ni == 10:
                 files = sorted(self.save_dir.glob('train*.jpg'))
                 self.wandb.log({'Mosaics': [wandb.Image(str(f), caption=f.name) for f in files if f.exists()]})
@@ -125,6 +126,10 @@ class Loggers():
                 self.tb.add_scalar(k, v, epoch)
 
         if self.wandb:
+            if best_fitness == fi:
+                best_results = [epoch] + vals[3:7]
+                for i, name in enumerate(self.best_keys):
+                    self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
             self.wandb.log(x)
             self.wandb.end_epoch(best_result=best_fitness == fi)
 
@@ -138,7 +143,7 @@ class Loggers():
         # Callback runs on training end
         if plots:
             plot_results(file=self.save_dir / 'results.csv')  # save results.png
-        files = ['results.png', 'confusion_matrix.png', *[f'{x}_curve.png' for x in ('F1', 'PR', 'P', 'R')]]
+        files = ['results.png', 'confusion_matrix.png', *(f'{x}_curve.png' for x in ('F1', 'PR', 'P', 'R'))]
         files = [(self.save_dir / f) for f in files if (self.save_dir / f).exists()]  # filter
 
         if self.tb:
@@ -147,6 +152,7 @@ class Loggers():
                 self.tb.add_image(f.stem, cv2.imread(str(f))[..., ::-1], epoch, dataformats='HWC')
 
         if self.wandb:
+            self.wandb.log({k: v for k, v in zip(self.keys[3:10], results)})  # log best.pt val results
             self.wandb.log({"Results": [wandb.Image(str(f), caption=f.name) for f in files]})
             # Calling wandb.log. TODO: Refactor this into WandbLogger.log_model
             if not self.opt.evolve:
@@ -157,3 +163,9 @@ class Loggers():
             else:
                 self.wandb.finish_run()
                 self.wandb = WandbLogger(self.opt)
+
+    def on_params_update(self, params):
+        # Update hyperparams or configs of the experiment
+        # params: A dict containing {param: value} pairs
+        if self.wandb:
+            self.wandb.wandb_run.config.update(params, allow_val_change=True)

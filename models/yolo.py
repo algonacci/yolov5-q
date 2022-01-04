@@ -30,8 +30,6 @@ try:
 except ImportError:
     thop = None
 
-LOGGER = logging.getLogger(__name__)
-
 
 class Detect(nn.Module):
     stride = None  # strides computed during build

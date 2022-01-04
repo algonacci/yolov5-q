@@ -38,9 +38,18 @@ pd.options.display.max_columns = 10
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
 os.environ['NUMEXPR_MAX_THREADS'] = str(min(os.cpu_count(), 8))  # NumExpr max threads
 
+def set_logging(name=None, verbose=True):
+    # Sets level and returns logger
+    for h in logging.root.handlers:
+        logging.root.removeHandler(h)  # remove all handlers associated with the root logger object
+    rank = int(os.getenv('RANK', -1))  # rank in world for Multi-GPU trainings
+    logging.basicConfig(format="%(message)s", level=logging.INFO if (verbose and rank in (-1, 0)) else logging.WARNING)
+    return logging.getLogger(name)
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLOv5 root directory
 
+LOGGER = set_logging(__name__)  # define globally (used in train.py, val.py, detect.py, etc.)
 
 class Profile(contextlib.ContextDecorator):
     # Usage: @Profile() decorator or 'with Profile():' context manager
