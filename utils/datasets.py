@@ -272,16 +272,20 @@ def create_dataloader(
         else RandomSampler(dataset)
     )
 
-    batch_sampler = YoloBatchSampler(
-        sampler=sampler,
-        batch_size=batch_size,
-        drop_last=False,
-        augment=augment,
+    batch_sampler = (
+        YoloBatchSampler(
+            sampler=sampler,
+            batch_size=batch_size,
+            drop_last=False,
+            augment=augment,
+        )
+        if not rect
+        else None
     )
     dataloader = DataLoader(
         dataset,
         num_workers=nw,
-        # batch_size=batch_size,
+        batch_size=1 if batch_sampler is not None else batch_size,  # batch-size and batch-sampler is exclusion
         batch_sampler=batch_sampler,
         pin_memory=True,
         collate_fn=LoadImagesAndLabels.collate_fn4
@@ -525,7 +529,7 @@ class LoadImages:
             self.count += 1
             img0 = cv2.imread(path)  # BGR
             assert img0 is not None, "Image Not Found " + path
-            s = f'image {self.count}/{self.nf} {path}: '
+            s = f"image {self.count}/{self.nf} {path}: "
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
@@ -572,7 +576,7 @@ class LoadWebcam:  # for inference
         # Print
         assert ret_val, f"Camera Error {self.pipe}"
         img_path = "webcam.jpg"
-        s = f'webcam {self.count}: '
+        s = f"webcam {self.count}: "
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride)[0]
@@ -707,7 +711,7 @@ class LoadStreams:
         img = img[..., ::-1].transpose((0, 3, 1, 2))  # BGR to RGB, BHWC to BCHW
         img = np.ascontiguousarray(img)
 
-        return self.sources, img, img0, None, ''
+        return self.sources, img, img0, None, ""
 
     def __len__(self):
         return len(self.sources)  # 1E12 frames = 32 streams at 30 FPS for 30 years

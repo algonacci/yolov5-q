@@ -9,36 +9,36 @@ class Callbacks:
     Handles all registered callbacks for YOLOv5 Hooks
     """
 
-    # Define the available callbacks
-    _callbacks = {
-        'on_pretrain_routine_start': [],
-        'on_pretrain_routine_end': [],
+    def __init__(self):
+        # Define the available callbacks
+        self._callbacks = {
+            'on_pretrain_routine_start': [],
+            'on_pretrain_routine_end': [],
 
-        'on_train_start': [],
-        'on_train_epoch_start': [],
-        'on_train_batch_start': [],
-        'optimizer_step': [],
-        'on_before_zero_grad': [],
-        'on_train_batch_end': [],
-        'on_train_epoch_end': [],
+            'on_train_start': [],
+            'on_train_epoch_start': [],
+            'on_train_batch_start': [],
+            'optimizer_step': [],
+            'on_before_zero_grad': [],
+            'on_train_batch_end': [],
+            'on_train_epoch_end': [],
 
-        'on_val_start': [],
-        'on_val_batch_start': [],
-        'on_val_image_end': [],
-        'on_val_batch_end': [],
-        'on_val_end': [],
+            'on_val_start': [],
+            'on_val_batch_start': [],
+            'on_val_image_end': [],
+            'on_val_batch_end': [],
+            'on_val_end': [],
 
-        'on_fit_epoch_end': [],  # fit = train + val
-        'on_model_save': [],
-        'on_train_end': [],
-
-        'teardown': [],
-    }
+            'on_fit_epoch_end': [],  # fit = train + val
+            'on_model_save': [],
+            'on_train_end': [],
+            'on_params_update': [],
+            'teardown': [],
+        }
 
     def register_action(self, hook, name='', callback=None):
         """
         Register a new action to a callback hook
-
         Args:
             hook        The callback hook name to register the action to
             name        The name of the action for later reference
@@ -51,7 +51,6 @@ class Callbacks:
     def get_registered_actions(self, hook=None):
         """"
         Returns all the registered actions by callback hook
-
         Args:
             hook The name of the hook to check, defaults to all
         """
@@ -63,7 +62,6 @@ class Callbacks:
     def run(self, hook, *args, **kwargs):
         """
         Loop through the registered actions and fire all callbacks
-
         Args:
             hook The name of the hook to check, defaults to all
             args Arguments to receive from YOLOv5

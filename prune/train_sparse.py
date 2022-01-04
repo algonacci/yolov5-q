@@ -27,7 +27,7 @@ from torch.optim import Adam, SGD, lr_scheduler
 from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
+ROOT = FILE.parents[1]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
@@ -254,7 +254,7 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
     )  # plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
-    ema = ModelEMA(model) if RANK in [-1, 0] else None
+    ema = ModelEMA(model, prune=True) if RANK in [-1, 0] else None
 
     # Resume
     start_epoch, best_fitness = 0, 0.0
@@ -582,10 +582,10 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
                 ckpt = {
                     "epoch": epoch,
                     "best_fitness": best_fitness,
-                    # 'model': deepcopy(de_parallel(model)).half(),
-                    # 'ema': deepcopy(ema.ema).half(),
-                    "model": deepcopy(de_parallel(model)).state_dict(),
-                    "ema": deepcopy(ema.ema).state_dict(),
+                    'model': deepcopy(de_parallel(model)).half(),
+                    'ema': deepcopy(ema.ema).half(),
+                    # "state_dict": deepcopy(de_parallel(ema.ema)).state_dict(),
+                    # "ema": deepcopy(ema.ema).state_dict(),
                     "updates": ema.updates,
                     "optimizer": optimizer.state_dict(),
                     "wandb_id": loggers.wandb.wandb_run.id if loggers.wandb else None,
@@ -621,30 +621,30 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
         #    break  # must break all DDP ranks
 
         # end epoch ----------------------------------------------------------------------------------------------------
-        # end training -----------------------------------------------------------------------------------------------------
-        #     if RANK in [-1, 0]:
-        #         LOGGER.info(f'\n{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.')
-        #         for f in last, best:
-        #             if f.exists():
-        #                 strip_optimizer(f)  # strip optimizers
-        #                 if f is best:
-        #                     LOGGER.info(f'\nValidating {f}...')
-        #                     results, _, _ = val.run(data_dict,
-        #                                             batch_size=batch_size // WORLD_SIZE * 2,
-        #                                             imgsz=imgsz,
-        #                                             model=attempt_load(f, device).half(),
-        #                                             iou_thres=0.65 if is_coco else 0.60,  # best pycocotools results at 0.65
-        #                                             single_cls=single_cls,
-        #                                             dataloader=val_loader,
-        #                                             save_dir=save_dir,
-        #                                             save_json=is_coco,
-        #                                             verbose=True,
-        #                                             plots=True,
-        #                                             callbacks=callbacks,
-        #                                             compute_loss=compute_loss)  # val best model with plots
-        #                     if is_coco:
-        #                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
-        #
+    # end training -----------------------------------------------------------------------------------------------------
+    if RANK in [-1, 0]:
+        LOGGER.info(f'\n{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.')
+        for f in last, best:
+            if f.exists():
+                strip_optimizer(f, prune=True)  # strip optimizers
+                if f is best:
+                    LOGGER.info(f'\nValidating {f}...')
+                    results, _, _ = val.run(data_dict,
+                                            batch_size=batch_size // WORLD_SIZE * 2,
+                                            imgsz=imgsz,
+                                            model=attempt_load(f, device).half(),
+                                            iou_thres=0.65 if is_coco else 0.60,  # best pycocotools results at 0.65
+                                            single_cls=single_cls,
+                                            dataloader=val_loader,
+                                            save_dir=save_dir,
+                                            save_json=is_coco,
+                                            verbose=True,
+                                            plots=True,
+                                            callbacks=callbacks,
+                                            compute_loss=compute_loss)  # val best model with plots
+                    if is_coco:
+                        callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
+
         callbacks.run("on_train_end", last, best, plots, epoch, results)
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}")
 
@@ -990,6 +990,7 @@ def run(**kwargs):
 
 
 if __name__ == "__main__":
+    # TODO, this may suit for yolov5s only, I'm not sure.
     ignore_modules = [
         "model.2.m.0.cv2.bn",
         "model.13.m.0.cv2.conv",

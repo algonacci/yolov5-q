@@ -1,18 +1,28 @@
 from loguru import logger
 from torch import nn
-import torch_pruning as tp
+from pathlib import Path
+import sys
 import torch
 import tabulate
 import numpy as np
 import os
 import matplotlib.pyplot as plt
 import copy
-from models.yolo import Model
 from collections import defaultdict
 from typing import List, Tuple
+import yaml
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[1]  # YOLOv5 root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+
+import torch_pruning as tp
 from utils.general import check_yaml
 from val_sparse import run
-import yaml
+from models.yolo import Model
+from models.experimental import attempt_load
 
 print = logger.info
 
@@ -81,7 +91,7 @@ ignore_modules = [
 
 def load_model(cfg="models/mobile-yolo5l_voc.yaml", weights="./outputs/mvoc/weights/best_mvoc.pt"):
     model = Model(cfg).to(device)
-    ckpt = torch.load(weights, map_location=device)['model']  # load checkpoint
+    ckpt = torch.load(weights, map_location=device)['state_dict']  # load checkpoint
     model.load_state_dict(ckpt, strict=False)
     del ckpt
 
@@ -402,19 +412,20 @@ class ModelDetails:
 
 
 if __name__ == "__main__":
-    CFG_FILE = "/home/laughing/yolov5/models/yolov5s.yaml"
-    MODEL_FILE = "/home/laughing/yolov5/runs/prune/guiyang_spare7/weights/best.pt"
+    CFG_FILE = "/home/laughing/yolov5/models/yolov5n.yaml"
+    MODEL_FILE = "/home/laughing/yolov5/runs/train/exp/weights/best.pt"
 
-    PRUNING_FILE = "/home/laughing/yolov5/weights/pruned_auto.pt"
+    PRUNING_FILE = "/home/laughing/yolov5/weights/pruned_auto_n.pt"
 
     device = torch.device("cpu")
-    model = load_model(CFG_FILE, MODEL_FILE)  # load checkpoint
+    # model = load_model(CFG_FILE, MODEL_FILE)  # load checkpoint
+    model = attempt_load(weights='/home/laughing/yolov5/runs/train/exp/weights/best.pt', fuse=False)  # load checkpoint
 
     pruned_prob = 0.0
     example_inputs = torch.zeros((1, 3, 640, 640), dtype=torch.float32).to()
 
     output_transform = None
-    thres = 0.01
+    thres = 0.02
 
     if thres != 0:
         thres = thres
@@ -426,6 +437,7 @@ if __name__ == "__main__":
     pruning = Pruning(model, (nn.BatchNorm2d,), ignore_modules=ignore_modules)
     pruned_model = pruning.pruning(thres=thres, check_only=False, weight_only=False)
     # pruning.compare()
+    # pruning.save_pruned(save_path=PRUNING_FILE)
 
     data = check_yaml('/home/laughing/yolov5/data/custom/guiyang_phone.yaml')
     _ = run(data, model=pruned_model.cuda(), batch_size=8, imgsz=640, conf_thres=.001, iou_thres=.6,
