@@ -60,6 +60,7 @@ from utils.datasets import LoadImages
 from utils.general import (LOGGER, check_dataset, check_img_size, check_requirements, colorstr, file_size, print_args,
                            url2file)
 from utils.torch_utils import select_device
+import pycuda.autoinit
 
 
 def export_torchscript(model, im, file, optimize, prefix=colorstr('TorchScript:')):
@@ -167,7 +168,8 @@ def export_engine(model, im, file, train, half, simplify, workspace=4, verbose=F
         check_requirements(('tensorrt',))
         import tensorrt as trt
 
-        opset = (12, 13)[trt.__version__[0] == '8']  # test on TensorRT 7.x and 8.x
+        # opset = (12, 13)[trt.__version__[0] == '8']  # test on TensorRT 7.x and 8.x
+        opset = 12
         export_onnx(model, im, file, opset, train, False, simplify)
         onnx = file.with_suffix('.onnx')
         assert onnx.exists(), f'failed to export ONNX file: {onnx}'
@@ -384,7 +386,7 @@ def run(data=ROOT / 'data/coco128.yaml',  # 'dataset.yaml path'
     device = select_device(device)
     assert not (device.type == 'cpu' and half), '--half only compatible with GPU export, i.e. use --device 0'
     model = attempt_load(weights, map_location=device, inplace=True, fuse=True)  # load FP32 model
-    nc, names = model.nc, model.names  # number of classes, class names
+    # nc, names = model.nc, model.names  # number of classes, class names
 
     # Input
     gs = int(max(model.stride))  # grid size (max stride)
