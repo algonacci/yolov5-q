@@ -68,7 +68,12 @@ class Detect(nn.Module):
                     y = torch.cat((xy, wh, y[..., 4:]), -1)
                 z.append(y.view(bs, -1, self.no))
 
-        return x if self.training else (torch.cat(z, 1), x)
+        if torch.onnx.is_in_onnx_export():
+            output = torch.cat(z, 1)
+            return output.type_as(x[i])  # keep the same type with x
+        else:
+            return x if self.training else (torch.cat(z, 1), x)
+        # return x if self.training else torch.cat(z, 1)
 
     def _make_grid(self, nx=20, ny=20, i=0):
         d = self.anchors[i].device

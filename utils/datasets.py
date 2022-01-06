@@ -519,10 +519,7 @@ class LoadImages:
                     ret_val, img0 = self.cap.read()
 
             self.frame += 1
-            print(
-                f"video {self.count + 1}/{self.nf} ({self.frame}/{self.frames}) {path}: ",
-                end="",
-            )
+            s = f'video {self.count + 1}/{self.nf} ({self.frame}/{self.frames}) {path}: '
 
         else:
             # Read image
