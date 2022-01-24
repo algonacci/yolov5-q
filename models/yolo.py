@@ -65,12 +65,12 @@ class Detect(nn.Module):
                 else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
                     xy = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
                     wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-                    y = torch.cat((xy, wh, y[..., 4:]), -1)
-                z.append(y.view(bs, -1, self.no))
+                    y = torch.cat((xy.type_as(y), wh.type_as(y), y[..., 4:]), -1)
+                z.append(y.view(-1, self.na * ny * nx, self.no))
 
         if torch.onnx.is_in_onnx_export():
             output = torch.cat(z, 1)
-            return output.type_as(x[i])  # keep the same type with x
+            return output  # keep the same type with x
         else:
             return x if self.training else (torch.cat(z, 1), x)
         # return x if self.training else torch.cat(z, 1)
