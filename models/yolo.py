@@ -278,6 +278,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         elif m is nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
+            print(ch, f)
             c2 = sum([ch[x] for x in f])
         elif m is Detect:
             args.append([ch[x] for x in f])
@@ -305,7 +306,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolov5s.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='yolov5n_p4_tiny.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     opt = parser.parse_args()
@@ -317,11 +318,11 @@ if __name__ == '__main__':
     # Create model
     model = Model(opt.cfg).to(device)
 
-    for k, m in model.named_modules():
-    # for k, m in model.named_children():
-        print(k)
-        # if isinstance(m, nn.BatchNorm2d):
-            # print(m)
+    # for k, m in model.named_modules():
+    # # for k, m in model.named_children():
+    #     print(k)
+    #     # if isinstance(m, nn.BatchNorm2d):
+    #         # print(m)
 
     model.train()
 
