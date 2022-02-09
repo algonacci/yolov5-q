@@ -255,3 +255,6 @@ fabric.properties
 
 # wts
 *.wts
+
+# temp file
+temp.*
