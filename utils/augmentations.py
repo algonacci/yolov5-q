@@ -160,6 +160,7 @@ def random_perspective(
     perspective=0.0,
     border=(0, 0),
     area_thr=0.2,
+    return_seg=False,
 ):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
     # targets = [cls, xyxy]
@@ -219,6 +220,7 @@ def random_perspective(
 
     # Transform label coordinates
     n = len(targets)
+    new_segments = []
     if n:
         use_segments = any(x.any() for x in segments)
         new = np.zeros((n, 4))
@@ -234,6 +236,7 @@ def random_perspective(
 
                 # clip
                 new[i] = segment2box(xy, width, height)
+                new_segments.append(xy)
 
         else:  # warp boxes
             xy = np.ones((n * 4, 3))
@@ -266,8 +269,10 @@ def random_perspective(
         )
         targets = targets[i]
         targets[:, 1:5] = new[i]
+        new_segments = np.array(new_segments)[i] if len(
+            new_segments) else np.array(new_segments)
 
-    return im, targets
+    return (im, targets, new_segments) if return_seg else (im, targets)
 
 
 def copy_paste(im, labels, segments, p=0.5):

@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from utils.general import colorstr, emojis
 from utils.loggers.wandb.wandb_utils import WandbLogger
-from utils.plots import plot_images, plot_results
+from utils.plots import plot_images, plot_results, plot_images_and_masks
 from utils.torch_utils import de_parallel
 
 LOGGERS = ('csv', 'tb', 'wandb')  # text-file, TensorBoard, Weights & Biases
@@ -169,3 +169,49 @@ class Loggers():
         # params: A dict containing {param: value} pairs
         if self.wandb:
             self.wandb.wandb_run.config.update(params, allow_val_change=True)
+
+class LoggersMask(Loggers):
+    def __init__(self, save_dir=None, weights=None, opt=None, hyp=None, logger=None, include=LOGGERS):
+        super().__init__(save_dir, weights, opt, hyp, logger, include)
+        self.keys = ['train/box_loss', 'train/obj_loss', 'train/cls_loss', 'train/seg_loss',  # train loss
+                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',  # metrics
+                     'val/box_loss', 'val/obj_loss', 'val/cls_loss', 'val/seg_loss',  # val loss
+                     'x/lr0', 'x/lr1', 'x/lr2']  # params
+        self.best_keys = ['best/epoch', 'best/precision', 'best/recall', 'best/mAP_0.5', 'best/mAP_0.5:0.95',]
+
+    def on_train_batch_end(self, ni, model, imgs, targets, masks, paths, plots, sync_bn):
+        # Callback runs on train batch end
+        if plots:
+            if ni == 0:
+                if not sync_bn:  # tb.add_graph() --sync known issue https://github.com/ultralytics/yolov5/issues/3754
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore')  # suppress jit trace warning
+                        self.tb.add_graph(torch.jit.trace(de_parallel(model), imgs[0:1], strict=False), [])
+            if ni < 3:
+                f = self.save_dir / f'train_batch{ni}.jpg'  # filename
+                Thread(target=plot_images_and_masks, args=(imgs, targets, masks, paths, f), daemon=True).start()
+            if self.wandb and ni == 10:
+                files = sorted(self.save_dir.glob('train*.jpg'))
+                self.wandb.log({'Mosaics': [wandb.Image(str(f), caption=f.name) for f in files if f.exists()]})
+
+    def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
+        # Callback runs at the end of each fit (train+val) epoch
+        x = {k: v for k, v in zip(self.keys, vals)}  # dict
+        if self.csv:
+            file = self.save_dir / 'results.csv'
+            n = len(x) + 1  # number of cols
+            s = '' if file.exists() else (('%20s,' * n % tuple(['epoch'] + self.keys)).rstrip(',') + '\n')  # add header
+            with open(file, 'a') as f:
+                f.write(s + ('%20.5g,' * n % tuple([epoch] + vals)).rstrip(',') + '\n')
+
+        if self.tb:
+            for k, v in x.items():
+                self.tb.add_scalar(k, v, epoch)
+
+        if self.wandb:
+            if best_fitness == fi:
+                best_results = [epoch] + vals[3:7]
+                for i, name in enumerate(self.best_keys):
+                    self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
+            self.wandb.log(x)
+            self.wandb.end_epoch(best_result=best_fitness == fi)

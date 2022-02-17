@@ -83,6 +83,63 @@ class Detect(nn.Module):
             .view((1, self.na, 1, 1, 2)).expand((1, self.na, ny, nx, 2)).float()
         return grid, anchor_grid
 
+class DetectSegment(Detect):
+    def __init__(self, nc=80, anchors=(), mask_dim=32, proto_channel=256, ch=(), inplace=True):
+        super().__init__(nc, anchors, ch, inplace)
+        self.mask_dim = mask_dim
+        self.no = nc + 5 + self.mask_dim  # number of outputs per anchor
+        self.nm = 5 + self.mask_dim
+        self.proto_c = proto_channel
+        self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1)
+                               for x in ch)  # output conv
+
+        # p3作为输入
+        self.proto_net = nn.Sequential(
+            nn.Conv2d(ch[0], self.proto_c, kernel_size=3, stride=1, padding=1),
+            nn.SiLU(inplace=True),
+            # nn.Conv2d(self.proto_c, self.proto_c, kernel_size=3, stride=1, padding=1),
+            # nn.SiLU(inplace=True),
+            # nn.Conv2d(self.proto_c, self.proto_c, kernel_size=3, stride=1, padding=1),
+            # nn.SiLU(inplace=True), nn.Upsample(scale_factor=2, mode='nearest'),
+            # nn.Conv2d(self.proto_c, self.proto_c, kernel_size=3, stride=1, padding=1),
+            # nn.SiLU(inplace=True),
+            nn.Conv2d(self.proto_c, self.mask_dim, kernel_size=1, padding=0),
+            nn.SiLU(inplace=True))
+
+    def forward(self, x):
+        z = []  # inference output
+        for i in range(self.nl):
+            if i == 0:
+                proto_out = self.proto_net(x[i])
+
+            x[i] = self.m[i](x[i])  # conv
+            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+
+            if not self.training:  # inference
+                if self.grid[i].shape[2:4] != x[i].shape[2:4] or self.onnx_dynamic:
+                    self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
+
+                y = x[i]
+                y[..., 0:5] = y[..., 0:5].sigmoid()
+                y[..., self.nm:] = y[..., self.nm:].sigmoid()
+                if self.inplace:
+                    y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
+                    xy = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    y = torch.cat((xy.type_as(y), wh.type_as(y), y[..., 4:]), -1)
+                z.append(y.view(-1, self.na * ny * nx, self.no))
+
+        # TODO: export
+        if torch.onnx.is_in_onnx_export():
+            output = torch.cat(z, 1)
+            return output  # keep the same type with x
+        else:
+            return (x, proto_out) if self.training else (torch.cat(z, 1), x, proto_out)
+
+
 
 class Model(nn.Module):
     def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
@@ -109,7 +166,15 @@ class Model(nn.Module):
 
         # Build strides, anchors
         m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):
+        if isinstance(m, DetectSegment):
+            s = 256  # 2x min stride
+            m.inplace = self.inplace
+            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))[0]])  # forward
+            m.anchors /= m.stride.view(-1, 1, 1)
+            check_anchor_order(m)
+            self.stride = m.stride
+            self._initialize_biases()  # only run once
+        elif isinstance(m, Detect):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
@@ -280,7 +345,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         elif m is Concat:
             print(ch, f)
             c2 = sum([ch[x] for x in f])
-        elif m is Detect:
+        # TODO: channel, gw, gd
+        elif m in [Detect, DetectSegment]:
             args.append([ch[x] for x in f])
             if isinstance(args[1], int):  # number of anchors
                 args[1] = [list(range(args[1] * 2))] * len(f)
@@ -306,9 +372,9 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolov5n_p4_tiny.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='yolov5n_seg.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--profile', action='store_true', help='profile model speed')
+    parser.add_argument('--profile', action='store_true', default=True, help='profile model speed')
     opt = parser.parse_args()
     opt.cfg = check_yaml(opt.cfg)  # check YAML
     print_args(FILE.stem, opt)
@@ -325,6 +391,7 @@ if __name__ == '__main__':
     #         # print(m)
 
     model.train()
+    # print(model.model[-1].proto_net)
 
     # Profile
     if opt.profile:

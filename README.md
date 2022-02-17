@@ -1,3 +1,12 @@
+- [ ] `plot_results`
+- [ ] 1process_masks1 mask cuda out of memory
+- [ ] detect.py
+- [ ] Other augmentation
+- [ ] Mixup
+- [ ] DetectSegment head support `gw`, `gd`
+
+----
+
 <div align="center">
 <p>
    <a align="left" href="https://ultralytics.com/yolov5" target="_blank">
