@@ -560,6 +560,56 @@ def plot_results(file="path/to/results.csv", dir="", best=True):
     plt.close()
 
 
+def plot_results_with_masks(file="path/to/results.csv", dir="", best=True):
+    # Plot training results.csv. Usage: from utils.plots import *; plot_results('path/to/results.csv')
+    save_dir = Path(file).parent if file else Path(dir)
+    fig, ax = plt.subplots(2, 8, figsize=(18, 6), tight_layout=True)
+    ax = ax.ravel()
+    files = list(save_dir.glob("results*.csv"))
+    assert len(
+        files
+    ), f"No results.csv files found in {save_dir.resolve()}, nothing to plot."
+    for _, f in enumerate(files):
+        try:
+            data = pd.read_csv(f)
+            index = np.argmax(
+                0.9 * data.values[:, 8] + 0.1 * data.values[:, 7],
+                0.9 * data.values[:, 12] + 0.1 * data.values[:, 11],
+            )
+            s = [x.strip() for x in data.columns]
+            x = data.values[:, 0]
+            for i, j in enumerate(
+                [1, 2, 3, 4, 5, 6, 9, 10, 13, 14, 15, 16, 7, 8, 11, 12]
+            ):
+                y = data.values[:, j]
+                # y[y == 0] = np.nan  # don't show zero values
+                ax[i].plot(x, y, marker=".", label=f.stem, linewidth=2, markersize=2)
+                if best:
+                    # best
+                    ax[i].scatter(
+                        index,
+                        y[index],
+                        color="r",
+                        label=f"best:{index}",
+                        marker="*",
+                        linewidth=3,
+                    )
+                    ax[i].set_title(s[j] + f"\n{round(y[index], 5)}")
+                else:
+                    # last
+                    ax[i].scatter(
+                        x[-1], y[-1], color="r", label="last", marker="*", linewidth=3
+                    )
+                    ax[i].set_title(s[j] + f"\n{round(y[-1], 5)}")
+                # if j in [8, 9, 10]:  # share train and val loss y axes
+                #     ax[i].get_shared_y_axes().join(ax[i], ax[i - 5])
+        except Exception as e:
+            print(f"Warning: Plotting error for {f}: {e}")
+    ax[1].legend()
+    fig.savefig(save_dir / "results.png", dpi=200)
+    plt.close()
+
+
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     import random
 
@@ -619,7 +669,10 @@ def feature_visualization(
             plt.savefig(save_dir / f, dpi=300, bbox_inches="tight")
             plt.close()
 
-def save_one_box(xyxy, im, file='image.jpg', gain=1.02, pad=10, square=False, BGR=False, save=True):
+
+def save_one_box(
+    xyxy, im, file="image.jpg", gain=1.02, pad=10, square=False, BGR=False, save=True
+):
     # Save image crop as {file} with crop size multiple {gain} and {pad} pixels. Save and/or return crop
     xyxy = torch.tensor(xyxy).view(-1, 4)
     b = xyxy2xywh(xyxy)  # boxes
@@ -628,20 +681,27 @@ def save_one_box(xyxy, im, file='image.jpg', gain=1.02, pad=10, square=False, BG
     b[:, 2:] = b[:, 2:] * gain + pad  # box wh * gain + pad
     xyxy = xywh2xyxy(b).long()
     clip_coords(xyxy, im.shape)
-    crop = im[int(xyxy[0, 1]):int(xyxy[0, 3]), int(xyxy[0, 0]):int(xyxy[0, 2]), ::(1 if BGR else -1)]
+    crop = im[
+        int(xyxy[0, 1]) : int(xyxy[0, 3]),
+        int(xyxy[0, 0]) : int(xyxy[0, 2]),
+        :: (1 if BGR else -1),
+    ]
     if save:
         file.parent.mkdir(parents=True, exist_ok=True)  # make directory
-        cv2.imwrite(str(increment_path(file).with_suffix('.jpg')), crop)
+        cv2.imwrite(str(increment_path(file).with_suffix(".jpg")), crop)
     return crop
 
-def plot_images_and_masks(images,
-                          targets,
-                          masks,
-                          paths=None,
-                          fname='images.jpg',
-                          names=None,
-                          max_size=640,
-                          max_subplots=16):
+
+def plot_images_and_masks(
+    images,
+    targets,
+    masks,
+    paths=None,
+    fname="images.jpg",
+    names=None,
+    max_size=640,
+    max_subplots=16,
+):
     # Plot image grid with labels
     # print("targets:", targets.shape)
     # print("masks:", masks.shape)
@@ -663,7 +723,7 @@ def plot_images_and_masks(images,
     tf = max(tl - 1, 1)  # font thickness
     bs, _, h, w = images.shape  # batch size, _, height, width
     bs = min(bs, max_subplots)  # limit plot images
-    ns = np.ceil(bs**0.5)  # number of subplots (square)
+    ns = np.ceil(bs ** 0.5)  # number of subplots (square)
 
     # Check if we should resize
     scale_factor = max_size / max(h, w)
@@ -671,8 +731,7 @@ def plot_images_and_masks(images,
         h = math.ceil(scale_factor * h)
         w = math.ceil(scale_factor * w)
 
-    mosaic = np.full((int(ns * h), int(ns * w), 3), 255,
-                     dtype=np.uint8)  # init
+    mosaic = np.full((int(ns * h), int(ns * w), 3), 255, dtype=np.uint8)  # init
     for i, img in enumerate(images):
         if i == max_subplots:  # if last batch has fewer images than we expect
             break
@@ -684,7 +743,7 @@ def plot_images_and_masks(images,
         if scale_factor < 1:
             img = cv2.resize(img, (w, h))
 
-        mosaic[block_y:block_y + h, block_x:block_x + w, :] = img
+        mosaic[block_y : block_y + h, block_x : block_x + w, :] = img
         if len(targets) > 0:
             idx = (targets[:, 0]).astype(int)
             image_targets = targets[idx == i]
@@ -695,10 +754,11 @@ def plot_images_and_masks(images,
             # mosaic_masks[block_y:block_y + h,
             #              block_x:block_x + w, :] = image_masks
             boxes = xywh2xyxy(image_targets[:, 2:6]).T
-            classes = image_targets[:, 1].astype('int')
+            classes = image_targets[:, 1].astype("int")
             labels = image_targets.shape[1] == 6  # labels if no conf column
-            conf = None if labels else image_targets[:,
-                                                     6]  # check for confidence presence (label vs pred)
+            conf = (
+                None if labels else image_targets[:, 6]
+            )  # check for confidence presence (label vs pred)
 
             if boxes.shape[1]:
                 if boxes.max() <= 1.01:  # if normalized with tolerance 0.01
@@ -716,39 +776,86 @@ def plot_images_and_masks(images,
                 # print(mask.shape)
                 # print(mosaic.shape)
                 if labels or conf[j] > 0.25:  # 0.25 conf thresh
-                    label = '%s' % cls if labels else '%s %.1f' % (cls,
-                                                                   conf[j])
-                    plot_one_box(box,
-                                 mosaic,
-                                 label=label,
-                                 color=color,
-                                 line_thickness=tl)
-                    mosaic[
-                        block_y:block_y + h, block_x:block_x +
-                        w, :][mask] = mosaic[block_y:block_y + h, block_x:block_x +
-                                             w, :][mask] * 0.35 + (np.array(color) * 0.65)
+                    label = "%s" % cls if labels else "%s %.1f" % (cls, conf[j])
+                    plot_one_box(
+                        box, mosaic, label=label, color=color, line_thickness=tl
+                    )
+                    mosaic[block_y : block_y + h, block_x : block_x + w, :][
+                        mask
+                    ] = mosaic[block_y : block_y + h, block_x : block_x + w, :][
+                        mask
+                    ] * 0.35 + (
+                        np.array(color) * 0.65
+                    )
 
         # Draw image filename labels
         if paths:
             label = Path(paths[i]).name[:40]  # trim to 40 char
-            t_size = cv2.getTextSize(label, 0, fontScale=tl / 3,
-                                     thickness=tf)[0]
-            cv2.putText(mosaic,
-                        label, (block_x + 5, block_y + t_size[1] + 5),
-                        0,
-                        tl / 3, [220, 220, 220],
-                        thickness=tf,
-                        lineType=cv2.LINE_AA)
+            t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
+            cv2.putText(
+                mosaic,
+                label,
+                (block_x + 5, block_y + t_size[1] + 5),
+                0,
+                tl / 3,
+                [220, 220, 220],
+                thickness=tf,
+                lineType=cv2.LINE_AA,
+            )
 
         # Image border
-        cv2.rectangle(mosaic, (block_x, block_y), (block_x + w, block_y + h),
-                      (255, 255, 255),
-                      thickness=3)
+        cv2.rectangle(
+            mosaic,
+            (block_x, block_y),
+            (block_x + w, block_y + h),
+            (255, 255, 255),
+            thickness=3,
+        )
 
     if fname:
-        r = min(1280. / max(h, w) / ns, 1.0)  # ratio to limit image size
-        mosaic = cv2.resize(mosaic, (int(ns * w * r), int(ns * h * r)),
-                            interpolation=cv2.INTER_AREA)
+        r = min(1280.0 / max(h, w) / ns, 1.0)  # ratio to limit image size
+        mosaic = cv2.resize(
+            mosaic, (int(ns * w * r), int(ns * h * r)), interpolation=cv2.INTER_AREA
+        )
         # cv2.imwrite(fname, cv2.cvtColor(mosaic, cv2.COLOR_BGR2RGB))  # cv2 save
         Image.fromarray(mosaic).save(fname)  # PIL save
     return mosaic
+
+def plot_masks(img, masks, colors, alpha=0.5):
+    """
+    Args:
+        img (tensor): img on cuda, shape: [1, 3, h, w]
+        masks (tensor): predicted masks on cuda, shape: [n, h, w]
+        colors (list[list]): colors for predicted masks, [[r, g, b] * n] 
+    Return:
+        img after draw masks, shape: [h, w, 3]
+
+    transform colors and send img_gpu to cpu for the most time.
+    """
+    # for k in range(masks.shape[0]):
+    #     cv2.imshow('p', masks[k].cpu().numpy())
+    #     cv2.waitKey(0)
+    img_gpu = img.clone()
+    num_masks = len(masks)
+    # [n, 1, 1, 3]
+    # faster this way to transform colors
+    colors = torch.tensor(colors, device=img.device).float() / 255.
+    colors = colors[:, None, None, :]
+    # colors = torch.cat([torch.tensor(color, device=img.device).view(1, 1, 1, 3).float() / 255. 
+    #                      for color in colors])
+    # [n, h, w, 1]
+    masks = masks[:, :, :, None]
+    masks_color = masks.repeat(1, 1, 1, 3) * colors * alpha
+    inv_alph_masks = masks * (-alpha) + 1
+    masks_color_summand = masks_color[0]
+    if num_masks > 1:
+        inv_alph_cumul = inv_alph_masks[:(num_masks - 1)].cumprod(dim=0)
+        masks_color_cumul = masks_color[1:] * inv_alph_cumul
+        masks_color_summand += masks_color_cumul.sum(dim=0)
+
+    # print(inv_alph_masks.prod(dim=0).shape) # [h, w, 1]
+    img_gpu = img_gpu[0].flip(dims=[0]) # filp channel for opencv
+    img_gpu = img_gpu.permute(1, 2, 0).contiguous()
+    # [h, w, 3]
+    img_gpu = img_gpu * inv_alph_masks.prod(dim=0) + masks_color_summand
+    return (img_gpu * 255).byte().cpu().numpy()

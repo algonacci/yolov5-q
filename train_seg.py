@@ -453,9 +453,9 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
                     compute_loss=compute_loss,
                 )
 
-            # TODO: fit box map only
+            # TODO: fit box map and mask map
             # Update best mAP
-            fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
+            fi = fitness(np.array(results).reshape(1, -1), masks=True)  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
             if fi > best_fitness:
                 best_fitness = fi
             log_vals = list(mloss) + list(results) + lr
@@ -524,8 +524,7 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
                         callbacks.run("on_fit_epoch_end", list(mloss) + list(results) + lr, epoch, best_fitness, fi)
 
         # TODO: plot_results
-        # callbacks.run("on_train_end", last, best, plots, epoch, results)
-        callbacks.run("on_train_end", last, best, False, epoch, results)
+        callbacks.run("on_train_end", last, best, plots, epoch, results, masks=True)
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}")
 
     torch.cuda.empty_cache()

@@ -26,7 +26,7 @@ dataset = LoadImagesAndLabelsAndMasks(
     # '/d/projects/research/yolov5/data/coco/val2017.txt',
     '/home/laughing/yolov5/data/seg/balloon/images/train',
     img_size=640,
-    augment=False,
+    augment=True,
     cache_images=False,
     hyp=hyp,
 )
@@ -50,7 +50,7 @@ cv2.namedWindow('mosaic', cv2.WINDOW_NORMAL)
 for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
     # for i, (imgs, targets, paths, _) in enumerate(dataset):
     #     print(targets)
-    print(targets)
+    # print(targets)
     result = plot_images_and_masks(images=imgs,
                           targets=targets,
                           paths=paths,

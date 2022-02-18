@@ -12,6 +12,7 @@ import os
 import sys
 from pathlib import Path
 from threading import Thread
+from easydict import EasyDict as edict
 
 import numpy as np
 import torch
@@ -46,8 +47,13 @@ from utils.general import (
     process_mask,
     mask_iou,
 )
-from utils.metrics import ap_per_class, ConfusionMatrix
-from utils.plots import output_to_target, plot_images, plot_val_study, plot_images_and_masks
+from utils.metrics import ap_per_class, ap_per_class_box_and_mask, ConfusionMatrix
+from utils.plots import (
+    output_to_target,
+    plot_images,
+    plot_val_study,
+    plot_images_and_masks,
+)
 from utils.torch_utils import select_device, time_sync
 from utils.callbacks import Callbacks
 
@@ -116,16 +122,19 @@ def process_batch_masks(predn, proto_out, gt_masksi, labels, iouv, plot):
     )
     process = process_mask_upsample if plot else process_mask
     pred_maski = (
-            # TODO:predn[:, 6:]
         process(proto_out, predn[:, 6:], predn[:, :4], gt_masksi.shape[1:])
         .permute(2, 0, 1)
         .contiguous()
     )
     if not plot:
-        gt_masksi = F.interpolate(gt_masksi.unsqueeze(0), pred_maski.shape[1:], mode='bilinear', align_corners=False).squeeze(0)
+        gt_masksi = F.interpolate(
+            gt_masksi.unsqueeze(0),
+            pred_maski.shape[1:],
+            mode="bilinear",
+            align_corners=False,
+        ).squeeze(0)
     iou = mask_iou(
-        gt_masksi.view(gt_masksi.shape[0], -1), 
-        pred_maski.view(pred_maski.shape[0], -1) 
+        gt_masksi.view(gt_masksi.shape[0], -1), pred_maski.view(pred_maski.shape[0], -1)
     )
     x = torch.where(
         (iou >= iouv[0]) & (labels[:, 0:1] == predn[:, 5])
@@ -247,24 +256,50 @@ def run(
         )
     }
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ("%20s" + "%11s" * 6) % (
+    s = ("%20s" + "%11s" * 10) % (
         "Class",
         "Images",
         "Labels",
-        "P",
+        # "P(B)",
+        # "R(B)",
+        # "mAP@.5(B)",
+        # "mAP@.5:.95(B)",
+        # "P(M)",
+        # "R(M)",
+        # "mAP@.5(M)",
+        # "mAP@.5:.95(M)",
+        "Box:{P",
         "R",
         "mAP@.5",
-        "mAP@.5:.95",
+        "mAP@.5:.95}",
+        "Mask:{P",
+        "R",
+        "mAP@.5",
+        "mAP@.5:.95}",
     )
-    dt, p, r, f1, mp, mr, map50, map = (
-        [0.0, 0.0, 0.0],
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
+
+    dt = [0.0, 0.0, 0.0]
+    metric = edict(
+        {
+            "boxes": {
+                "p": 0.0,
+                "r": 0.0,
+                "f1": 0.0,
+                "mp": 0.0,
+                "mr": 0.0,
+                "map50": 0.0,
+                "map": 0.0,
+            },
+            "masks": {
+                "p": 0.0,
+                "r": 0.0,
+                "f1": 0.0,
+                "mp": 0.0,
+                "mr": 0.0,
+                "map50": 0.0,
+                "map": 0.0,
+            },
+        }
     )
     loss = torch.zeros(4, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
@@ -340,19 +375,26 @@ def run(
                 # scale_coords(img[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
                 labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
                 # boxes
-                # correct = process_batch(predn, labelsn, iouv)
+                correct_boxes = process_batch(predn, labelsn, iouv)
 
                 # mask
-                correct, pred_maski = process_batch_masks(
+                correct_masks, pred_maski = process_batch_masks(
                     predn, proto_out[si], masksi, labelsn, iouv, img.shape[2:]
                 )
                 if plots:
                     pred_masks.append(pred_maski.detach().int())
                     confusion_matrix.process_batch(predn, labelsn)
             else:
-                correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
+                correct_boxes = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
+                correct_masks = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
             stats.append(
-                (correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls)
+                (
+                    correct_boxes.cpu(),
+                    correct_masks.cpu(),
+                    pred[:, 4].cpu(),
+                    pred[:, 5].cpu(),
+                    tcls,
+                )
             )  # (correct, conf, pcls, tcls)
 
             # Save/log
@@ -373,24 +415,41 @@ def run(
         if plots and batch_i < 3:
             f = save_dir / f"val_batch{batch_i}_labels.jpg"  # labels
             Thread(
-                    target=plot_images_and_masks, args=(img, targets, masks, paths, f, names, max(img.shape[2:])), daemon=True
+                target=plot_images_and_masks,
+                args=(img, targets, masks, paths, f, names, max(img.shape[2:])),
+                daemon=True,
             ).start()
             f = save_dir / f"val_batch{batch_i}_pred.jpg"  # predictions
-            pred_masks = torch.cat(pred_masks, dim=0) if len(pred_masks) > 1 else pred_masks[0]
+            pred_masks = (
+                torch.cat(pred_masks, dim=0) if len(pred_masks) > 1 else pred_masks[0]
+            )
             Thread(
                 target=plot_images_and_masks,
-                args=(img, output_to_target(out), pred_masks, paths, f, names, max(img.shape[2:])),
+                args=(
+                    img,
+                    output_to_target(out),
+                    pred_masks,
+                    paths,
+                    f,
+                    names,
+                    max(img.shape[2:]),
+                ),
                 daemon=False,
             ).start()
 
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-    if len(stats) and stats[0].any():
-        p, r, ap, f1, ap_class = ap_per_class(
+    if len(stats) and (stats[0].any() or stats[1].any()):
+        metric = ap_per_class_box_and_mask(
             *stats, plot=plots, save_dir=save_dir, names=names
         )
-        ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-        mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+        for _, v in metric.items():
+            v.ap50 = v.ap[:, 0]  # AP@50
+            v.ap = v.ap.mean()  # AP@0.5:0.95
+            v.mp = v.p.mean()
+            v.mr = v.r.mean()
+            v.map50 = v.ap50.mean()
+            v.map = v.ap.mean()
         nt = np.bincount(
             stats[3].astype(np.int64), minlength=nc
         )  # number of targets per class
@@ -398,13 +457,43 @@ def run(
         nt = torch.zeros(1)
 
     # Print results
-    pf = "%20s" + "%11i" * 2 + "%11.3g" * 4  # print format
-    print(pf % ("all", seen, nt.sum(), mp, mr, map50, map))
+    pf = "%20s" + "%11i" * 2 + "%11.3g" * 8  # print format
+    print(
+        pf
+        % (
+            "all",
+            seen,
+            nt.sum(),
+            metric.boxes.mp,
+            metric.boxes.mr,
+            metric.boxes.map50,
+            metric.boxes.map,
+            metric.masks.mp,
+            metric.masks.mr,
+            metric.masks.map50,
+            metric.masks.map,
+        )
+    )
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            print(
+                pf
+                % (
+                    names[c],
+                    seen,
+                    nt[c],
+                    metric.boxes.p[i],
+                    metric.boxes.r[i],
+                    metric.boxes.ap50[i],
+                    metric.boxes.ap[i],
+                    metric.masks.p[i],
+                    metric.masks.r[i],
+                    metric.masks.ap50[i],
+                    metric.masks.ap[i],
+                )
+            )
 
     # Print speeds
     t = tuple(x / seen * 1e3 for x in dt)  # speeds per image
@@ -463,38 +552,92 @@ def run(
             else ""
         )
         print(f"Results saved to {colorstr('bold', save_dir)}{s}")
-    maps = np.zeros(nc) + map
-    for i, c in enumerate(ap_class):
-        maps[c] = ap[i]
-    return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+
+    for _, v in metric.items():
+        v.maps = np.zeros(nc) + v.map
+        for i, c in enumerate(ap_class):
+            v.maps[c] = v.ap[i]
+
+    keys = ("mp", "mr", "map50", "map")
+    results_box = [v for k, v in metric["boxes"].items() if k in keys]
+    results_mask = [v for k, v in metric["masks"].items() if k in keys]
+    maps = metric["boxes"].maps + metric["masks"].maps
+    return (
+        (*(results_box + results_mask), *(loss.cpu() / len(dataloader)).tolist()),
+        maps,
+        t,
+    )
+
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, default=ROOT / "data/coco128.yaml", help="dataset.yaml path")
-    parser.add_argument("--weights", nargs="+", type=str, default=ROOT / "yolov5s.pt", help="model.pt path(s)")
+    parser.add_argument(
+        "--data", type=str, default=ROOT / "data/coco128.yaml", help="dataset.yaml path"
+    )
+    parser.add_argument(
+        "--weights",
+        nargs="+",
+        type=str,
+        default=ROOT / "yolov5s.pt",
+        help="model.pt path(s)",
+    )
     parser.add_argument("--batch-size", type=int, default=32, help="batch size")
-    parser.add_argument("--imgsz", "--img", "--img-size", type=int, default=640, help="inference size (pixels)")
-    parser.add_argument("--conf-thres", type=float, default=0.001, help="confidence threshold")
-    parser.add_argument("--iou-thres", type=float, default=0.6, help="NMS IoU threshold")
-    parser.add_argument("--task", default="val", help="train, val, test, speed or study")
-    parser.add_argument("--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu")
-    parser.add_argument("--single-cls", action="store_true", help="treat as single-class dataset")
+    parser.add_argument(
+        "--imgsz",
+        "--img",
+        "--img-size",
+        type=int,
+        default=640,
+        help="inference size (pixels)",
+    )
+    parser.add_argument(
+        "--conf-thres", type=float, default=0.001, help="confidence threshold"
+    )
+    parser.add_argument(
+        "--iou-thres", type=float, default=0.6, help="NMS IoU threshold"
+    )
+    parser.add_argument(
+        "--task", default="val", help="train, val, test, speed or study"
+    )
+    parser.add_argument(
+        "--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu"
+    )
+    parser.add_argument(
+        "--single-cls", action="store_true", help="treat as single-class dataset"
+    )
     parser.add_argument("--augment", action="store_true", help="augmented inference")
     parser.add_argument("--verbose", action="store_true", help="report mAP by class")
     parser.add_argument("--save-txt", action="store_true", help="save results to *.txt")
-    parser.add_argument("--save-hybrid", action="store_true", help="save label+prediction hybrid results to *.txt")
-    parser.add_argument("--save-conf", action="store_true", help="save confidences in --save-txt labels")
-    parser.add_argument("--save-json", action="store_true", help="save a COCO-JSON results file")
-    parser.add_argument("--project", default=ROOT / "runs/val", help="save to project/name")
+    parser.add_argument(
+        "--save-hybrid",
+        action="store_true",
+        help="save label+prediction hybrid results to *.txt",
+    )
+    parser.add_argument(
+        "--save-conf", action="store_true", help="save confidences in --save-txt labels"
+    )
+    parser.add_argument(
+        "--save-json", action="store_true", help="save a COCO-JSON results file"
+    )
+    parser.add_argument(
+        "--project", default=ROOT / "runs/val", help="save to project/name"
+    )
     parser.add_argument("--name", default="exp", help="save to project/name")
-    parser.add_argument("--exist-ok", action="store_true", help="existing project/name ok, do not increment")
-    parser.add_argument("--half", action="store_true", help="use FP16 half-precision inference")
+    parser.add_argument(
+        "--exist-ok",
+        action="store_true",
+        help="existing project/name ok, do not increment",
+    )
+    parser.add_argument(
+        "--half", action="store_true", help="use FP16 half-precision inference"
+    )
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith("coco.yaml")
     opt.save_txt |= opt.save_hybrid
     print_args(FILE.stem, opt)
     return opt
+
 
 def main(opt):
     set_logging()

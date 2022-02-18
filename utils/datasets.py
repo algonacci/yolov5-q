@@ -226,9 +226,7 @@ def create_dataloader_ori(
         shuffle=shuffle and sampler is None,
         sampler=sampler,
         pin_memory=True,
-        collate_fn=data_load.collate_fn4
-        if quad
-        else data_load.collate_fn,
+        collate_fn=data_load.collate_fn4 if quad else data_load.collate_fn,
     )
     return dataloader, dataset
 
@@ -310,9 +308,7 @@ def create_dataloader(
         else batch_size,  # batch-size and batch-sampler is exclusion
         batch_sampler=batch_sampler,
         pin_memory=True,
-        collate_fn=data_load.collate_fn4
-        if quad
-        else data_load.collate_fn,
+        collate_fn=data_load.collate_fn4 if quad else data_load.collate_fn,
         # Make sure each process has different random seed, especially for 'fork' method.
         # Check https://github.com/pytorch/pytorch/issues/63311 for more details.
         # worker_init_fn=worker_init_reset_seed,
@@ -1265,29 +1261,38 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
                 )
                 masks.append(torch.from_numpy(mask.astype(np.float32)))
 
-        # TODO: Other augmentation support
-        # if self.augment:
-        #     # Albumentations
-        #     img, labels = self.albumentations(img, labels)
-        #     nl = len(labels)  # update after albumentations
-        #
-        #     # HSV color-space
-        #     augment_hsv(img, hgain=hyp["hsv_h"], sgain=hyp["hsv_s"], vgain=hyp["hsv_v"])
-        #
-        #     # Flip up-down
-        #     if random.random() < hyp["flipud"]:
-        #         img = np.flipud(img)
-        #         if nl:
-        #             labels[:, 2] = 1 - labels[:, 2]
-        #
-        #     # Flip left-right
-        #     if random.random() < hyp["fliplr"]:
-        #         img = np.fliplr(img)
-        #         if nl:
-        #             labels[:, 1] = 1 - labels[:, 1]
-        #
-        #     # Cutouts
-        #     # labels = cutout(img, labels, p=0.5)
+        masks = (
+            torch.stack(masks, axis=0)
+            if len(masks)
+            else torch.zeros(nl, self.img_size, self.img_size)
+        )
+        # TODO: albumentations support
+        if self.augment:
+            # Albumentations
+            # there are some augmentation that won't change boxes and masks,
+            # so just be it for now.
+            img, labels = self.albumentations(img, labels)
+            nl = len(labels)  # update after albumentations
+
+            # HSV color-space
+            augment_hsv(img, hgain=hyp["hsv_h"], sgain=hyp["hsv_s"], vgain=hyp["hsv_v"])
+
+            # Flip up-down
+            if random.random() < hyp["flipud"]:
+                img = np.flipud(img)
+                if nl:
+                    labels[:, 2] = 1 - labels[:, 2]
+                    masks = torch.flip(masks, dims=[1])
+
+            # Flip left-right
+            if random.random() < hyp["fliplr"]:
+                img = np.fliplr(img)
+                if nl:
+                    labels[:, 1] = 1 - labels[:, 1]
+                    masks = torch.flip(masks, dims=[2])
+
+            # Cutouts
+            # labels = cutout(img, labels, p=0.5)
 
         labels_out = torch.zeros((nl, 6))
         if nl:
@@ -1302,9 +1307,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             labels_out,
             self.img_files[index],
             shapes,
-            torch.stack(masks, axis=0)
-            if len(masks)
-            else torch.zeros(nl, self.img_size, self.img_size),
+            masks
         )
 
     @staticmethod
@@ -1448,7 +1451,7 @@ def load_mosaic(self, index, return_seg=False):
         if j >= (4 - num_neg):
             continue
 
-        # TODO
+        # TODO: deal with segments
         if len(self.img_bg_files) and temp_label is not None:
             labels, segments = temp_label, []
         else:
