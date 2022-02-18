@@ -4,6 +4,7 @@
 - [ ] Other augmentation
 - [ ] Mixup
 - [ ] DetectSegment head support `gw`, `gd`
+- [ ] coco eval
 
 ----
 
