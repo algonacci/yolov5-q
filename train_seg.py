@@ -427,7 +427,7 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
                 pbar.set_description(
                     ("%10s" * 2 + "%10.4g" * 6) % (f"{epoch}/{epochs - 1}", mem, *mloss, targets.shape[0], imgs.shape[-1])
                 )
-                callbacks.run("on_train_batch_end", ni, model, imgs, targets, masks, paths, plots, opt.sync_bn)
+                callbacks.run("on_train_batch_end", ni, model, imgs, targets, masks, paths, plots, opt.sync_bn, plot_idx)
             # end batch ------------------------------------------------------------------------------------------------
 
         # Scheduler
@@ -516,7 +516,7 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
                         save_dir=save_dir,
                         save_json=is_coco,
                         verbose=True,
-                        plots=True,
+                        plots=False,
                         callbacks=callbacks,
                         compute_loss=compute_loss,
                     )  # val best model with plots

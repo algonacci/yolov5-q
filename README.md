@@ -1,10 +1,14 @@
 - [ ] `plot_results`
-- [ ] 1process_masks1 mask cuda out of memory
+- [X] `process_masks` mask cuda out of memory
 - [ ] detect.py
 - [ ] Other augmentation
 - [ ] Mixup
 - [ ] DetectSegment head support `gw`, `gd`
 - [ ] coco eval
+
+- Plot mask will occupy a lot of cuda memory, so `plots=False` in `train_seg` by default.
+- `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
+- `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
 
 ----
 

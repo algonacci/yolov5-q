@@ -1229,6 +1229,7 @@ def crop(masks, boxes):
 
 def process_mask_upsample(proto_out, out_masks, bboxes, shape):
     """
+    Crop after unsample.
     proto_out: [mask_dim, mask_h, mask_w]
     out_masks: [n, mask_dim], n is number of masks after nms
     bboxes: [n, 4], n is number of masks after nms
@@ -1249,8 +1250,9 @@ def process_mask_upsample(proto_out, out_masks, bboxes, shape):
     masks = crop(masks.permute(1, 2, 0).contiguous(), bboxes)
     return masks.gt_(0.5) # .gt_(0.2)
 
-def process_mask(proto_out, out_masks, bboxes, shape):
+def process_mask(proto_out, out_masks, bboxes, shape, upsample=False):
     """
+    Crop before unsample.
     proto_out: [mask_dim, mask_h, mask_w]
     out_masks: [n, mask_dim], n is number of masks after nms
     bboxes: [n, 4], n is number of masks after nms
@@ -1274,7 +1276,8 @@ def process_mask(proto_out, out_masks, bboxes, shape):
     masks = crop(masks, downsampled_bboxes)
     masks = masks.permute(2, 0, 1).contiguous()
     # [n, mask_h, mask_w]
-    masks = F.interpolate(masks.unsqueeze(0), shape, mode='bilinear', align_corners=False).squeeze(0)
+    if upsample:
+        masks = F.interpolate(masks.unsqueeze(0), shape, mode='bilinear', align_corners=False).squeeze(0)
     return masks.gt_(0.5).permute(1, 2, 0).contiguous()
 
 def scale_masks(img1_shape, masks, img0_shape, ratio_pad=None):

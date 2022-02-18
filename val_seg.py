@@ -15,6 +15,7 @@ from threading import Thread
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
@@ -109,17 +110,19 @@ def process_batch(detections, labels, iouv):
     return correct
 
 
-def process_batch_masks(predn, proto_out, gt_masksi, labels, iouv, shape):
+def process_batch_masks(predn, proto_out, gt_masksi, labels, iouv, plot):
     correct = torch.zeros(
         predn.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device
     )
+    process = process_mask_upsample if plot else process_mask
     pred_maski = (
             # TODO:predn[:, 6:]
-        process_mask(proto_out, predn[:, 6:], predn[:, :4], shape)
-        # process_mask_upsample(proto_out, predn[:, 6:], predn[:, :4], shape)
+        process(proto_out, predn[:, 6:], predn[:, :4], gt_masksi.shape[1:])
         .permute(2, 0, 1)
         .contiguous()
     )
+    if not plot:
+        gt_masksi = F.interpolate(gt_masksi.unsqueeze(0), pred_maski.shape[1:], mode='bilinear', align_corners=False).squeeze(0)
     iou = mask_iou(
         gt_masksi.view(gt_masksi.shape[0], -1), 
         pred_maski.view(pred_maski.shape[0], -1) 
@@ -343,9 +346,8 @@ def run(
                 correct, pred_maski = process_batch_masks(
                     predn, proto_out[si], masksi, labelsn, iouv, img.shape[2:]
                 )
-                pred_masks.append(pred_maski.detach().int())
-
                 if plots:
+                    pred_masks.append(pred_maski.detach().int())
                     confusion_matrix.process_batch(predn, labelsn)
             else:
                 correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
@@ -370,23 +372,15 @@ def run(
         # Plot images
         if plots and batch_i < 3:
             f = save_dir / f"val_batch{batch_i}_labels.jpg"  # labels
-            # Thread(
-            #     target=plot_images, args=(img, targets, paths, f, names), daemon=True
-            # ).start()
             Thread(
                     target=plot_images_and_masks, args=(img, targets, masks, paths, f, names, max(img.shape[2:])), daemon=True
             ).start()
             f = save_dir / f"val_batch{batch_i}_pred.jpg"  # predictions
-            # Thread(
-            #     target=plot_images,
-            #     args=(img, output_to_target(out), paths, f, names),
-            #     daemon=True,
-            # ).start()
             pred_masks = torch.cat(pred_masks, dim=0) if len(pred_masks) > 1 else pred_masks[0]
             Thread(
                 target=plot_images_and_masks,
                 args=(img, output_to_target(out), pred_masks, paths, f, names, max(img.shape[2:])),
-                daemon=True,
+                daemon=False,
             ).start()
 
     # Compute statistics
