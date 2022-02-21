@@ -221,7 +221,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
     # Process 0
     if RANK in [-1, 0]:
-        val_loader = create_dataloader_ori(val_path, imgsz, batch_size // WORLD_SIZE * 2, gs, single_cls,
+        val_loader = create_dataloader(val_path, imgsz, batch_size // WORLD_SIZE * 2, gs, single_cls,
                                        hyp=hyp, cache=None if noval else opt.cache, rect=True, rank=-1,
                                        workers=workers, pad=0.5,
                                        prefix=colorstr('val: '))[0]
@@ -292,7 +292,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
         mloss = torch.zeros(3, device=device)  # mean losses
         if RANK != -1:
-            train_loader.sampler.set_epoch(epoch)
+            train_loader.batch_sampler.sampler.set_epoch(epoch)
         pbar = enumerate(train_loader)
         LOGGER.info(('\n' + '%10s' * 7) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'labels', 'img_size'))
         if RANK in [-1, 0]:

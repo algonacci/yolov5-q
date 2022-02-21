@@ -311,6 +311,7 @@ def create_dataloader(
         collate_fn=data_load.collate_fn4 if quad else data_load.collate_fn,
         # Make sure each process has different random seed, especially for 'fork' method.
         # Check https://github.com/pytorch/pytorch/issues/63311 for more details.
+        # but this will make init_seed() not work.
         # worker_init_fn=worker_init_reset_seed,
     )
     return dataloader, dataset
