@@ -52,6 +52,7 @@ from utils.torch_utils import (
 )
 from utils.metrics import fitness
 from utils.newloggers import NewLoggers
+from core.evaluator_ import Yolov5Evaluator
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_RANK = int(
@@ -87,19 +88,12 @@ class Trainer:
 
     def train(self):
         self.before_train()
-        # try:
-        #     self.train_in_epoch()
-        # except Exception:
-        #     raise
-        # finally:
-        #     self.after_train()
         self.train_in_epoch()
         self.after_epoch()
 
     def train_in_epoch(self):
         for epoch in range(self.start_epoch, self.epochs):
-            self.epoch = epoch
-            self.before_epoch()
+            self.before_epoch(epoch)
             self.train_in_iter()
             early_stop = self.after_epoch()
             if early_stop:
@@ -200,7 +194,7 @@ class Trainer:
 
         # Update self.hyp
         self.hyp = hyp
-        
+
         # initialize dataloader
         self._initialize_loader()
 
@@ -305,6 +299,9 @@ class Trainer:
 
         # initialize eval
         self._initialize_eval()
+        # self.evaluator = Yolov5Evaluator(
+        #     data=self.data_dict, single_cls=self.single_cls, save_dir=self.save_dir
+        # )
 
     def after_train(self):
         if RANK not in [-1, 0]:
@@ -343,7 +340,8 @@ class Trainer:
         torch.cuda.empty_cache()
         return self.results
 
-    def before_epoch(self):
+    def before_epoch(self, epoch):
+        self.epoch = epoch
         self.model.train()
         if self.epoch >= (self.epochs - self.no_aug_epochs):
             self.train_loader.close_augment()
@@ -645,7 +643,6 @@ class Trainer:
         self.plot_idx = [0, 1, 2]
         self.plots = True  # create plots
         self.t0 = time.time()
-
 
     def _parse_data(self):
         with torch_distributed_zero_first(LOCAL_RANK):

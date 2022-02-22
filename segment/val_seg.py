@@ -445,7 +445,7 @@ def run(
         )
         for _, v in metric.items():
             v.ap50 = v.ap[:, 0]  # AP@50
-            v.ap = v.ap.mean()  # AP@0.5:0.95
+            v.ap = v.ap.mean(1)  # AP@0.5:0.95
             v.mp = v.p.mean()
             v.mr = v.r.mean()
             v.map50 = v.ap50.mean()
