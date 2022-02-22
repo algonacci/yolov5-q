@@ -52,7 +52,7 @@ from utils.torch_utils import (
 )
 from utils.metrics import fitness
 from utils.newloggers import NewLoggers
-from core.evaluator_ import Yolov5Evaluator
+from core.evaluator import Yolov5Evaluator
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_RANK = int(
@@ -89,7 +89,7 @@ class Trainer:
     def train(self):
         self.before_train()
         self.train_in_epoch()
-        self.after_epoch()
+        self.after_train()
 
     def train_in_epoch(self):
         for epoch in range(self.start_epoch, self.epochs):
@@ -298,10 +298,13 @@ class Trainer:
             self.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
 
         # initialize eval
-        self._initialize_eval()
-        # self.evaluator = Yolov5Evaluator(
-        #     data=self.data_dict, single_cls=self.single_cls, save_dir=self.save_dir
-        # )
+        # self._initialize_eval()
+        self.evaluator = Yolov5Evaluator(
+            data=self.data_dict,
+            single_cls=self.single_cls,
+            save_dir=self.save_dir,
+            plots=False,
+        )
 
     def after_train(self):
         if RANK not in [-1, 0]:
@@ -316,15 +319,21 @@ class Trainer:
             if f is not self.best:
                 continue
             LOGGER.info(f"\nValidating {f}...")
-            self.results, _, _ = self.eval(
+            # self.results, _, _ = self.eval(
+            #     model=attempt_load(f, self.device).half(),
+            #     iou_thres=0.65
+            #     if self.is_coco
+            #     else 0.60,  # best pycocotools results at 0.65
+            #     save_json=self.is_coco,
+            #     verbose=True,
+            #     plots=True,
+            # )  # val best model with plots
+            self.evaluator.plots = True
+            self.results, _, _ = self.evaluator.run_training(
                 model=attempt_load(f, self.device).half(),
-                iou_thres=0.65
-                if self.is_coco
-                else 0.60,  # best pycocotools results at 0.65
-                save_json=self.is_coco,
-                verbose=True,
-                plots=True,
-            )  # val best model with plots
+                dataloader=self.val_loader,
+                compute_loss=self.compute_loss,
+            )
             if self.is_coco:
                 self.callbacks.run(
                     "on_fit_epoch_end",
@@ -459,9 +468,14 @@ class Trainer:
         lr = [x["lr"] for x in self.optimizer.param_groups]  # for loggers
         final_epoch = (self.epoch + 1 == self.epochs) or self.stopper.possible_stop
         if not self.noval or final_epoch:  # Calculate mAP
-            self.results, self.maps, _ = self.eval(
+            # self.results, self.maps, _ = self.eval(
+            #     model=self.ema.ema,
+            #     plots=False,
+            # )
+            self.results, self.maps, _ = self.evaluator.run_training(
                 model=self.ema.ema,
-                plots=False,
+                dataloader=self.val_loader,
+                compute_loss=self.compute_loss,
             )
 
         # Update best mAP

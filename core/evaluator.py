@@ -29,21 +29,17 @@ from utils.general import (
     coco80_to_coco91_class,
     check_dataset,
     check_img_size,
-    check_requirements,
     check_suffix,
-    check_yaml,
     box_iou,
     non_max_suppression,
     scale_coords,
     xyxy2xywh,
     xywh2xyxy,
-    set_logging,
     increment_path,
     colorstr,
-    print_args,
 )
 from utils.metrics import ap_per_class, ConfusionMatrix
-from utils.plots import output_to_target, plot_images, plot_val_study
+from utils.plots import output_to_target, plot_images
 from utils.torch_utils import select_device, time_sync
 
 
@@ -77,68 +73,43 @@ def save_one_json(predn, jdict, path, class_map):
 
 @torch.no_grad()
 class Yolov5Evaluator:
-    def __init__(self, data) -> None:
-        self.data = data
-        self.weights = None  # model.pt path(s)
-        self.batch_size = 32  # batch size
-        self.imgsz = 640  # inference size (pixels)
-        self.conf_thres = 0.001  # confidence threshold
-        self.iou_thres = 0.6  # NMS IoU threshold
-        self.task = "val"  # train, val, test, speed or study
-        self.device = ""  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        self.single_cls = False  # treat as single-class dataset
-        self.augment = False  # augmented inference
-        self.verbose = False  # verbose output
-        self.save_txt = False  # save results to *.txt
-        self.save_conf = False  # save confidences in --save-txt labels
-        self.save_json = False  # save a COCO-JSON results file
-        self.project = ROOT / "runs/val"  # save to project/name
-        self.name = "exp"  # save to project/name
-        self.exist_ok = False  # existing project/name ok, do not increment
-        self.half = True  # use FP16 half-precision inference
-        self.model = None
-        self.dataloader = None
-        self.save_dir = Path("")
-        self.plots = True
-        self.compute_loss = None
+    def __init__(
+        self,
+        data,
+        conf_thres=0.001,
+        iou_thres=0.6,
+        device="",
+        single_cls=False,
+        augment=False,
+        verbose=False,
+        project=ROOT / "runs/val",
+        name="exp",
+        exist_ok=False,
+        half=True,
+        save_dir=Path(""),
+        plots=True,
+    ) -> None:
+        self.data = check_dataset(data)  # check
+        self.conf_thres = conf_thres  # confidence threshold
+        self.iou_thres = iou_thres  # NMS IoU threshold
+        self.device = device  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+        self.single_cls = single_cls  # treat as single-class dataset
+        self.augment = augment  # augmented inference
+        self.verbose = verbose  # verbose output
+        self.project = project  # save to project/name
+        self.name = name  # save to project/name
+        self.exist_ok = exist_ok  # existing project/name ok, do not increment
+        self.half = half  # use FP16 half-precision inference
+        self.save_dir = save_dir
+        self.plots = plots
 
-        self.metric = Metric()
-
-    def run(self):
-        self.training = self.model is not None
-        if self.training:  # called by train.py
-            self.eval_training()
-        else:  # called directly
-            self.eval()
-
-        # Half
-        self.half &= self.device.type != "cpu"  # half precision only supported on CUDA
-        self.model.half() if self.half else self.model.float()
-
-        # Configure
-        self.model.eval()
-        is_coco = isinstance(self.data.get("val"), str) and self.data["val"].endswith(
-            "coco/val2017.txt"
-        )  # COCO dataset
-        nc = 1 if self.single_cls else int(self.data["nc"])  # number of classes
-        self.iouv = torch.linspace(0.5, 0.95, 10).to(
-            self.device
-        )  # iou vector for mAP@0.5:0.95
+        self.nc = 1 if self.single_cls else int(self.data["nc"])  # number of classes
+        self.iouv = torch.linspace(0.5, 0.95, 10)  # iou vector for mAP@0.5:0.95
         self.niou = self.iouv.numel()
-
-        # initialization
-        seen = 0
-        self.confusion_matrix = ConfusionMatrix(nc=nc)
-        names = {
-            k: v
-            for k, v in enumerate(
-                self.model.names
-                if hasattr(self.model, "names")
-                else self.model.module.names
-            )
-        }
-        class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-        s = ("%20s" + "%11s" * 6) % (
+        self.confusion_matrix = ConfusionMatrix(nc=self.nc)
+        self.dt = [0.0, 0.0, 0.0]
+        self.names = {k: v for k, v in enumerate(self.data["names"])}
+        self.s = ("%20s" + "%11s" * 6) % (
             "Class",
             "Images",
             "Labels",
@@ -147,150 +118,200 @@ class Yolov5Evaluator:
             "mAP@.5",
             "mAP@.5:.95",
         )
-        self.dt = [0.0, 0.0, 0.0]
-        self.loss = torch.zeros(3, device=self.device)
-        jdict, stats = [], []
+
+        # coco stuff
+        self.is_coco = isinstance(self.data.get("val"), str) and self.data[
+            "val"
+        ].endswith(
+            "coco/val2017.txt"
+        )  # COCO dataset
+        self.class_map = coco80_to_coco91_class() if self.is_coco else list(range(1000))
+        self.jdict = []
+        self.iou_thres = 0.65 if self.is_coco else self.iou_thres
+
+        # metric stuff
+        self.seen = 0
+        self.stats = []
+        self.total_loss = torch.zeros(3)
+        self.metric = Metric()
+
+    def run_training(self, model, dataloader, compute_loss=None):
+        """This is for evaluation when training."""
+        self.device = next(model.parameters()).device  # get model device
+        # self.iouv.to(self.device)
+        self.total_loss = torch.zeros(3, device=self.device)
+        self.half &= self.device.type != "cpu"  # half precision only supported on CUDA
+        model.half() if self.half else model.float()
+        # Configure
+        model.eval()
 
         # inference
         for batch_i, (img, targets, paths, shapes) in enumerate(
-            tqdm(self.dataloader, desc=s)
+            tqdm(dataloader, desc=self.s)
         ):
-            tp, ti, tn, out = self.inference(img, targets)
-            self.dt[0] += tp
-            self.dt[1] += ti
-            self.dt[1] += tn
+            targets = targets.to(self.device)
+            out = self.inference(model, img, targets, compute_loss)
 
             # Statistics per image
             for si, pred in enumerate(out):
-                seen += 1
-                predn = pred.clone()  # for native space
+                self.seen += 1
+                shape = shapes[si][0]
+                ratio_pad = shapes[si][1]
+
+                self.compute_stat(si, img, pred, targets, shape, ratio_pad)
+
+            self.plot_images(batch_i, img, targets, out, paths)
+
+        # compute map and print it.
+        t = self.after_infer()
+
+        # Return results
+        model.float()  # for training
+        return (
+            (
+                *self.metric.results(),
+                *(self.total_loss.cpu() / len(dataloader)).tolist(),
+            ),
+            self.metric.get_maps(self.nc),
+            t,
+        )
+
+    def run(
+        self,
+        weights,
+        batch_size,
+        imgsz,
+        save_txt=False,
+        save_conf=False,
+        save_json=False,
+        task="val",
+    ):
+        """This is for native evaluation."""
+        model, dataloader, imgsz = self.before_infer(weights, batch_size, imgsz, save_txt, task)
+        # self.iouv.to(self.device)
+        self.half &= self.device.type != "cpu"  # half precision only supported on CUDA
+        model.half() if self.half else model.float()
+        # Configure
+        model.eval()
+
+        # inference
+        for batch_i, (img, targets, paths, shapes) in enumerate(
+            tqdm(dataloader, desc=self.s)
+        ):
+            targets = targets.to(self.device)
+            out = self.inference(model, img, targets)
+
+            # Statistics per image
+            for si, pred in enumerate(out):
+                self.seen += 1
                 path = Path(paths[si])
                 shape = shapes[si][0]
                 ratio_pad = shapes[si][1]
 
-                stat = self.compute_stat(si, img, predn, targets, shape, ratio_pad)
-                if stat is not None:
-                    stats.append(stat)
+                self.compute_stat(si, img, pred, targets, shape, ratio_pad)
 
                 # Save/log
-                if self.save_txt:
+                if save_txt:
                     save_one_txt(
-                        predn,
-                        self.save_conf,
+                        pred,
+                        save_conf,
                         shape,
                         file=self.save_dir / "labels" / (path.stem + ".txt"),
                     )
-                if self.save_json:
+                if save_json:
                     save_one_json(
-                        predn, jdict, path, class_map
+                        pred, self.jdict, path, self.class_map
                     )  # append to COCO-JSON dictionary
 
-            # Plot images
-            if self.plots and batch_i < 3:
-                f = self.save_dir / f"val_batch{batch_i}_labels.jpg"  # labels
-                Thread(
-                    target=plot_images,
-                    args=(img, targets, paths, f, names),
-                    daemon=True,
-                ).start()
-                f = self.save_dir / f"val_batch{batch_i}_pred.jpg"  # predictions
-                Thread(
-                    target=plot_images,
-                    args=(img, output_to_target(out), paths, f, names),
-                    daemon=True,
-                ).start()
+            self.plot_images(batch_i, img, targets, out, paths)
 
-        # Compute statistics
-        stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-        if len(stats) and stats[0].any():
-            p, r, ap, f1, ap_class = ap_per_class(
-                *stats, plot=self.plots, save_dir=self.save_dir, names=names
-            )
-            self.metric.set(p, r, ap, f1, ap_class)
-            nt = np.bincount(
-                stats[3].astype(np.int64), minlength=nc
-            )  # number of targets per class
-        else:
-            nt = torch.zeros(1)
+        # compute map and print it.
+        t = self.after_infer()
 
-        t = tuple(x / seen * 1e3 for x in self.dt)  # speeds per image
-        # print information
-        self.print(seen, nt, nc, names, stats, t)
+        # Print speeds
+        shape = (batch_size, 3, imgsz, imgsz)
+        print(
+            f"Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}"
+            % t
+        )
 
-        # Plots
-        if self.plots:
-            self.confusion_matrix.plot(
-                save_dir=self.save_dir, names=list(names.values())
-            )
-
-        # TODO
-        # Save JSON
-        if self.save_json and len(jdict):
-            w = (
-                Path(
-                    self.weights[0] if isinstance(self.weights, list) else self.weights
-                ).stem
-                if self.weights is not None
-                else ""
-            )  # weights
-            anno_json = str(
-                Path(self.data.get("path", "../coco"))
-                / "annotations/instances_val2017.json"
-            )  # annotations json
-            pred_json = str(self.save_dir / f"{w}_predictions.json")  # predictions json
-            print(f"\nEvaluating pycocotools mAP... saving {pred_json}...")
-            with open(pred_json, "w") as f:
-                json.dump(jdict, f)
-
-            try:  # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
-                check_requirements(["pycocotools"])
-                from pycocotools.coco import COCO
-                from pycocotools.cocoeval import COCOeval
-
-                anno = COCO(anno_json)  # init annotations api
-                pred = anno.loadRes(pred_json)  # init predictions api
-                eval = COCOeval(anno, pred, "bbox")
-                if is_coco:
-                    eval.params.imgIds = [
-                        int(Path(x).stem) for x in self.dataloader.dataset.img_files
-                    ]  # image IDs to evaluate
-                eval.evaluate()
-                eval.accumulate()
-                eval.summarize()
-                map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
-            except Exception as e:
-                print(f"pycocotools unable to run: {e}")
+        s = (
+            f"\n{len(list(self.save_dir.glob('labels/*.txt')))} labels saved to {self.save_dir / 'labels'}"
+            if save_txt
+            else ""
+        )
+        print(f"Results saved to {colorstr('bold', self.save_dir)}{s}")
 
         # Return results
-        self.model.float()  # for training
         return (
             (
                 *self.metric.results(),
-                *(self.loss.cpu() / len(self.dataloader)).tolist(),
+                *(self.total_loss.cpu() / len(dataloader)).tolist(),
             ),
-            self.metric.maps,
+            self.metric.get_maps(self.nc),
             t,
         )
 
-    def inference(self, img, targets):
+    def before_infer(self, weights, batch_size, imgsz, save_txt, task="val"):
+        "This is for evaluation without training."
+        self.device = select_device(self.device, batch_size=batch_size)
+
+        # Directories
+        self.save_dir = increment_path(
+            Path(self.project) / self.name, exist_ok=self.exist_ok
+        )  # increment run
+        (self.save_dir / "labels" if save_txt else self.save_dir).mkdir(
+            parents=True, exist_ok=True
+        )  # make dir
+
+        # Load model
+        check_suffix(weights, ".pt")
+        model = attempt_load(weights, map_location=self.device)  # load FP32 model
+        gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+        imgsz = check_img_size(imgsz, s=gs)  # check image size
+
+        # Data
+        if self.device.type != "cpu":
+            model(
+                torch.zeros(1, 3, imgsz, imgsz)
+                .to(self.device)
+                .type_as(next(model.parameters()))
+            )  # run once
+        pad = 0.0 if task == "speed" else 0.5
+        task = (
+            task if task in ("train", "val", "test") else "val"
+        )  # path to train/val/test images
+        dataloader = create_dataloader(
+            self.data[task],
+            imgsz,
+            batch_size,
+            gs,
+            self.single_cls,
+            pad=pad,
+            rect=True,
+            prefix=colorstr(f"{task}: "),
+        )[0]
+        return model, dataloader, imgsz
+
+    def inference(self, model, img, targets, compute_loss=None):
+        """Inference"""
         t1 = time_sync()
         img = img.to(self.device, non_blocking=True)
         img = img.half() if self.half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        targets = targets.to(self.device)
-        nb, _, height, width = img.shape  # batch size, channels, height, width
+        _, _, height, width = img.shape  # batch size, channels, height, width
         t2 = time_sync()
-        tp = t2 - t1
+        self.dt[0] += t2 - t1
 
         # Run model
-        out, train_out = self.model(
+        out, train_out = model(
             img, augment=self.augment
         )  # inference and training outputs
-        ti = time_sync() - t2
+        self.dt[1] += time_sync() - t2
 
         # Compute loss
-        if self.compute_loss:
-            self.loss += self.compute_loss([x.float() for x in train_out], targets)[
+        if compute_loss:
+            self.total_loss += compute_loss([x.float() for x in train_out], targets)[
                 1
             ]  # box, obj, cls
 
@@ -306,8 +327,39 @@ class Yolov5Evaluator:
             multi_label=True,
             agnostic=self.single_cls,
         )
-        tn = time_sync() - t3
-        return tp, ti, tn, out
+        self.dt[2] += time_sync() - t3
+        return out
+
+    def after_infer(self):
+        """Do something after inference, such as plots and get metrics.
+        Return:
+            t(tuple): speeds of per image.
+        """
+        # Plot confusion matrix
+        if self.plots:
+            self.confusion_matrix.plot(
+                save_dir=self.save_dir, names=list(self.names.values())
+            )
+
+        # Compute statistics
+        stats = [np.concatenate(x, 0) for x in zip(*self.stats)]  # to numpy
+        if len(stats) and stats[0].any():
+            p, r, ap, f1, ap_class = ap_per_class(
+                *stats, plot=self.plots, save_dir=self.save_dir, names=self.names
+            )
+            self.metric.set(p, r, ap, f1, ap_class)
+            nt = np.bincount(
+                stats[3].astype(np.int64), minlength=self.nc
+            )  # number of targets per class
+        else:
+            nt = torch.zeros(1)
+
+        # make this empty, cause make `stats` self is for reduce some duplicated codes.
+        self.stats = []
+        # print information
+        self.print_metric(nt, stats)
+        t = tuple(x / self.seen * 1e3 for x in self.dt)  # speeds per image
+        return t
 
     def process_batch(self, detections, labels, iouv):
         """
@@ -341,17 +393,20 @@ class Yolov5Evaluator:
         return correct
 
     def compute_stat(self, si, img, predn, targets, shape, ratio_pad):
+        """Compute states about ious."""
         labels = targets[targets[:, 0] == si, 1:]
         nl = len(labels)
         tcls = labels[:, 0].tolist() if nl else []  # target class
 
         if len(predn) == 0:
             if nl:
-                return (
-                    torch.zeros(0, self.niou, dtype=torch.bool),
-                    torch.Tensor(),
-                    torch.Tensor(),
-                    tcls,
+                self.stats.append(
+                    (
+                        torch.zeros(0, self.niou, dtype=torch.bool),
+                        torch.Tensor(),
+                        torch.Tensor(),
+                        tcls,
+                    )
                 )
             return
 
@@ -374,37 +429,39 @@ class Yolov5Evaluator:
                 self.confusion_matrix.process_batch(predn, labelsn)
         else:
             correct = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
-        return (
-            correct.cpu(),
-            predn[:, 4].cpu(),
-            predn[:, 5].cpu(),
-            tcls,
+        self.stats.append(
+            (
+                correct.cpu(),
+                predn[:, 4].cpu(),
+                predn[:, 5].cpu(),
+                tcls,
+            )
         )  # (correct, conf, pcls, tcls)
 
-    def print(self, seen, nt, nc, names, stats, time):
+    def print_metric(self, nt, stats):
         # Print results
         pf = "%20s" + "%11i" * 2 + "%11.3g" * 4  # print format
         print(
             pf
             % (
                 "all",
-                seen,
+                self.seen,
                 nt.sum(),
                 self.metric.mp,
                 self.metric.mr,
                 self.metric.map50,
-                map,
+                self.metric.map,
             )
         )
 
         # Print results per class
-        if (self.verbose or (nc < 50 and not self.training)) and nc > 1 and len(stats):
+        if self.verbose and self.nc > 1 and len(stats):
             for i, c in enumerate(self.metric.ap_class_index):
                 print(
                     pf
                     % (
-                        names[c],
-                        seen,
+                        self.names[c],
+                        self.seen,
                         nt[c],
                         self.metric.p[i],
                         self.metric.r[i],
@@ -413,70 +470,21 @@ class Yolov5Evaluator:
                     )
                 )
 
-        # Print speeds
-        if not self.training:
-            shape = (self.batch_size, 3, self.imgsz, self.imgsz)
-            print(
-                f"Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}"
-                % time
-            )
-
-        if not self.training:
-            s = (
-                f"\n{len(list(self.save_dir.glob('labels/*.txt')))} labels saved to {self.save_dir / 'labels'}"
-                if self.save_txt
-                else ""
-            )
-            print(f"Results saved to {colorstr('bold', self.save_dir)}{s}")
-
-    def eval(self):
-        self.device = select_device(self.device, batch_size=self.batch_size)
-
-        # Directories
-        self.save_dir = increment_path(
-            Path(self.project) / self.name, exist_ok=self.exist_ok
-        )  # increment run
-        (self.save_dir / "labels" if self.save_txt else self.save_dir).mkdir(
-            parents=True, exist_ok=True
-        )  # make dir
-
-        # Load model
-        check_suffix(self.weights, ".pt")
-        self.model = attempt_load(
-            self.weights, map_location=self.device
-        )  # load FP32 model
-        gs = max(int(self.model.stride.max()), 32)  # grid size (max stride)
-        self.imgsz = check_img_size(self.imgsz, s=gs)  # check image size
-
-        # Multi-GPU disabled, incompatible with .half() https://github.com/ultralytics/yolov5/issues/99
-        # if device.type != 'cpu' and torch.cuda.device_count() > 1:
-        #     model = nn.DataParallel(model)
-
-        # Data
-        self.data = check_dataset(self.data)  # check
-        if self.device.type != "cpu":
-            self.model(
-                torch.zeros(1, 3, self.imgsz, self.imgsz)
-                .to(self.device)
-                .type_as(next(self.model.parameters()))
-            )  # run once
-        pad = 0.0 if self.task == "speed" else 0.5
-        self.task = (
-            self.task if self.task in ("train", "val", "test") else "val"
-        )  # path to train/val/test images
-        self.dataloader = create_dataloader(
-            self.data[self.task],
-            self.imgsz,
-            self.batch_size,
-            self.gs,
-            self.single_cls,
-            pad=pad,
-            rect=True,
-            prefix=colorstr(f"{self.task}: "),
-        )[0]
-
-    def eval_training(self):
-        self.device = next(self.model.parameters()).device  # get model device
+    def plot_images(self, i, img, targets, out, paths):
+        if (not self.plots) or i >= 3:
+            return
+        f = self.save_dir / f"val_batch{i}_labels.jpg"  # labels
+        Thread(
+            target=plot_images,
+            args=(img, targets, paths, f, self.names),
+            daemon=True,
+        ).start()
+        f = self.save_dir / f"val_batch{i}_pred.jpg"  # predictions
+        Thread(
+            target=plot_images,
+            args=(img, output_to_target(out), paths, f, self.names),
+            daemon=True,
+        ).start()
 
 
 class Metric:
@@ -545,8 +553,9 @@ class Metric:
             maps[c] = self.ap[i]
         return maps
 
-    def set(self, p, r, all_ap, ap_class_index):
+    def set(self, p, r, all_ap, f1, ap_class_index):
         self.p = p
         self.r = r
         self.all_ap = all_ap
+        self.f1 = f1
         self.ap_class_index = ap_class_index
