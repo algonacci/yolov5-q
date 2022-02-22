@@ -12,6 +12,7 @@
 - [ ] better way to compute seg loss
 - [ ] val
 - [ ] test `scale_coords` influence for map
+- [ ] `pt` -> `pth`?
 
 - Plot mask will occupy a lot of cuda memory, so `plots=False` in `train_seg` by default, so you may need to run `val_seg.py` after running `train_seg.py` for more visualization.
 - `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
