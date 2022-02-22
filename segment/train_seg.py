@@ -11,7 +11,6 @@ import logging
 import math
 import os
 import random
-import sys
 import time
 from copy import deepcopy
 from pathlib import Path
@@ -28,16 +27,14 @@ from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLOv5 root directory
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 import val_seg  # for end-of-epoch mAP
-from models.experimental import attempt_load
-from models.yolo import Model
-from utils.autoanchor import check_anchors
-from utils.datasets import create_dataloader, create_dataloader_ori
-from utils.general import (
+from yolov5.models.experimental import attempt_load
+from yolov5.models.yolo import Model
+from yolov5.utils.autoanchor import check_anchors
+from yolov5.utils.datasets import create_dataloader, create_dataloader_ori
+from yolov5.utils.general import (
     labels_to_class_weights,
     increment_path,
     labels_to_image_weights,
@@ -58,10 +55,10 @@ from utils.general import (
     colorstr,
     methods,
 )
-from utils.downloads import attempt_download
-from utils.loss import ComputeLoss
-from utils.plots import plot_labels, plot_evolve
-from utils.torch_utils import (
+from yolov5.utils.downloads import attempt_download
+from yolov5.utils.loss import ComputeLoss
+from yolov5.utils.plots import plot_labels, plot_evolve
+from yolov5.utils.torch_utils import (
     EarlyStopping,
     ModelEMA,
     de_parallel,
@@ -69,10 +66,10 @@ from utils.torch_utils import (
     select_device,
     torch_distributed_zero_first,
 )
-from utils.loggers.wandb.wandb_utils import check_wandb_resume
-from utils.metrics import fitness
-from utils.loggers import LoggersMask
-from utils.callbacks import Callbacks
+from yolov5.utils.loggers.wandb.wandb_utils import check_wandb_resume
+from yolov5.utils.metrics import fitness
+from yolov5.utils.loggers import LoggersMask
+from yolov5.utils.callbacks import Callbacks
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html

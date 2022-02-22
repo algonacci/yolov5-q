@@ -9,7 +9,6 @@ Usage:
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from threading import Thread
 from easydict import EasyDict as edict
@@ -21,13 +20,11 @@ from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLOv5 root directory
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from models.experimental import attempt_load
-from utils.datasets import create_dataloader_ori
-from utils.general import (
+from yolov5.models.experimental import attempt_load
+from yolov5.utils.datasets import create_dataloader_ori
+from yolov5.utils.general import (
     coco80_to_coco91_class,
     check_dataset,
     check_img_size,
@@ -47,15 +44,15 @@ from utils.general import (
     process_mask,
     mask_iou,
 )
-from utils.metrics import ap_per_class, ap_per_class_box_and_mask, ConfusionMatrix
-from utils.plots import (
+from yolov5.utils.metrics import ap_per_class, ap_per_class_box_and_mask, ConfusionMatrix
+from yolov5.utils.plots import (
     output_to_target,
     plot_images,
     plot_val_study,
     plot_images_and_masks,
 )
-from utils.torch_utils import select_device, time_sync
-from utils.callbacks import Callbacks
+from yolov5.utils.torch_utils import select_device, time_sync
+from yolov5.utils.callbacks import Callbacks
 
 
 def save_one_txt(predn, save_conf, shape, file):
