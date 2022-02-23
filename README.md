@@ -10,15 +10,14 @@
 - [ ] cuda memory increase when training with `mosaic augment`
 - [ ] smaller gt_masks for saving memory
 - [ ] better way to compute seg loss
-- [ ] val
+- [X] val
 - [ ] test `scale_coords` influence for map
-- [ ] `pt` -> `pth`?
+- [ ] DDP
 
 - Plot mask will occupy a lot of cuda memory, so `plots=False` in `train_seg` by default, so you may need to run `val_seg.py` after running `train_seg.py` for more visualization.
 - `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
 - `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
 - not support `wandb` and `evolve`.
-- 
 
 ----
 

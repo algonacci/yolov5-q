@@ -1,7 +1,6 @@
 from loguru import logger
 from torch import nn
 from pathlib import Path
-import sys
 import torch
 import tabulate
 import numpy as np
@@ -13,16 +12,12 @@ from typing import List, Tuple
 import yaml
 
 FILE = Path(__file__).resolve()
-ROOT = FILE.parents[1]  # YOLOv5 root directory
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))  # add ROOT to PATH
-ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-import torch_pruning as tp
-from utils.general import check_yaml
+import yolov5.torch_pruning as tp
+from yolov5.utils.general import check_yaml
 from val_sparse import run
-from models.yolo import Model
-from models.experimental import attempt_load
+from yolov5.models.yolo import Model
+from yolov5.models.experimental import attempt_load
 
 print = logger.info
 

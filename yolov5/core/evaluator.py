@@ -152,10 +152,16 @@ class Yolov5Evaluator:
             # Statistics per image
             for si, pred in enumerate(out):
                 self.seen += 1
-                shape = shapes[si][0]
-                ratio_pad = shapes[si][1]
+                predn = pred.clone()
 
-                self.compute_stat(si, img, pred, targets, shape, ratio_pad)
+                # I tested `compute_stat` and `compute_stat_native`,
+                # it shows the same results.
+                # but maybe I didn't do enough experiments, 
+                # so I left the related code(`compute_stat_native`).
+                self.compute_stat(si, predn, targets)
+                # shape = shapes[si][0]
+                # ratio_pad = shapes[si][1]
+                # self.compute_stat_native(si, img, predn, targets, shape, ratio_pad)
 
             self.plot_images(batch_i, img, targets, out, paths)
 
@@ -202,10 +208,16 @@ class Yolov5Evaluator:
             for si, pred in enumerate(out):
                 self.seen += 1
                 path = Path(paths[si])
+                predn = pred.clone()
                 shape = shapes[si][0]
-                ratio_pad = shapes[si][1]
 
-                self.compute_stat(si, img, pred, targets, shape, ratio_pad)
+                # I tested `compute_stat` and `compute_stat_native`,
+                # it shows the same results.
+                # but maybe I didn't do enough experiments, 
+                # so I left the related code(`compute_stat_native`).
+                self.compute_stat(si, predn, targets)
+                # ratio_pad = shapes[si][1]
+                # self.compute_stat_native(si, img, predn, targets, shape, ratio_pad)
 
                 # Save/log
                 if save_txt:
@@ -389,8 +401,48 @@ class Yolov5Evaluator:
             correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
         return correct
 
-    def compute_stat(self, si, img, predn, targets, shape, ratio_pad):
-        """Compute states about ious."""
+    def compute_stat(self, si, predn, targets):
+        """Compute states about ious. with boxs size in training img-size space."""
+        labels = targets[targets[:, 0] == si, 1:]
+        nl = len(labels)
+        tcls = labels[:, 0].tolist() if nl else []  # target class
+
+        if len(predn) == 0:
+            if nl:
+                self.stats.append(
+                    (
+                        torch.zeros(0, self.niou, dtype=torch.bool),
+                        torch.Tensor(),
+                        torch.Tensor(),
+                        tcls,
+                    )
+                )
+            return
+
+        # Predictions
+        if self.single_cls:
+            predn[:, 5] = 0
+
+        # Evaluate
+        if nl:
+            tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
+            labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
+            correct = self.process_batch(predn, labelsn, self.iouv)
+            if self.plots:
+                self.confusion_matrix.process_batch(predn, labelsn)
+        else:
+            correct = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
+        self.stats.append(
+            (
+                correct.cpu(),
+                predn[:, 4].cpu(),
+                predn[:, 5].cpu(),
+                tcls,
+            )
+        )  # (correct, conf, pcls, tcls)
+
+    def compute_stat_native(self, si, img, predn, targets, shape, ratio_pad):
+        """Compute states about ious. with boxs size in native space."""
         labels = targets[targets[:, 0] == si, 1:]
         nl = len(labels)
         tcls = labels[:, 0].tolist() if nl else []  # target class

@@ -52,9 +52,7 @@ from ..utils.newloggers import NewLoggers
 from .evaluator import Yolov5Evaluator
 
 LOGGER = logging.getLogger(__name__)
-LOCAL_RANK = int(
-    os.getenv("LOCAL_RANK", -1)
-)  # https://pytorch.org/docs/stable/elastic/run.html
+LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv("RANK", -1))
 WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
@@ -81,6 +79,18 @@ class Trainer:
         self.callbacks = callbacks
         self.device = device
 
+        self.scaler = amp.GradScaler(enabled=self.cuda)
+        self.stopper = EarlyStopping(patience=self.opt.patience)
+
+        with torch_distributed_zero_first(LOCAL_RANK):
+            self.data_dict = check_dataset(self.data)  # check if None
+        self.evaluator = Yolov5Evaluator(
+            data=self.data_dict,
+            single_cls=self.single_cls,
+            save_dir=self.save_dir,
+            plots=False,
+        )
+
         self._initializtion()
 
     def train(self):
@@ -99,16 +109,14 @@ class Trainer:
     def train_in_iter(self):
         for i, (imgs, targets, paths, _) in self.pbar:
             imgs = self.before_iter(imgs)
-            self.train_one_iter(i, imgs, targets)
-            self.after_iter(i, imgs, targets, paths)
+            loss_items = self.train_one_iter(i, imgs, targets)
+            self.after_iter(i, imgs, targets, paths, loss_items)
 
     def train_one_iter(self, i, imgs, targets):
-        self.ni = (
-            i + self.nb * self.epoch
-        )  # number integrated batches (since train start)
+        self.iter = i + self.batches * self.epoch  # number integrated batches (since train start)
 
         # Warmup
-        if self.ni <= self.nw:
+        if self.iter <= self.warmup_iters:
             self._warmup()
 
         # Multi-scale
@@ -118,7 +126,7 @@ class Trainer:
         # Forward
         with amp.autocast(enabled=self.cuda):
             pred = self.model(imgs)  # forward
-            loss, self.loss_items = self.compute_loss(
+            loss, loss_items = self.compute_loss(
                 pred, targets.to(self.device)
             )  # loss scaled by batch_size
             if RANK != -1:
@@ -130,13 +138,14 @@ class Trainer:
         self.scaler.scale(loss).backward()
 
         # Optimize
-        if self.ni - self.last_opt_step >= self.accumulate:
+        if self.iter - self.last_opt_step >= self.accumulate:
             self.scaler.step(self.optimizer)  # optimizer.step
             self.scaler.update()
             self.optimizer.zero_grad()
             if self.ema:
                 self.ema.update(self.model)
-            self.last_opt_step = self.ni
+            self.last_opt_step = self.iter
+        return loss_items
 
     def before_train(self):
         w = self.save_dir / "weights"  # weights dir
@@ -147,10 +156,7 @@ class Trainer:
         if isinstance(self.hyp, str):
             with open(self.hyp, errors="ignore") as f:
                 hyp = yaml.safe_load(f)  # load hyps dict
-        LOGGER.info(
-            colorstr("hyperparameters: ")
-            + ", ".join(f"{k}={v}" for k, v in hyp.items())
-        )
+        LOGGER.info(colorstr("hyperparameters: ") + ", ".join(f"{k}={v}" for k, v in hyp.items()))
 
         # Save run settings
         with open(self.save_dir / "hyp.yaml", "w") as f:
@@ -158,56 +164,52 @@ class Trainer:
         with open(self.save_dir / "opt.yaml", "w") as f:
             yaml.safe_dump(vars(self.opt), f, sort_keys=False)
 
+        # Update self.hyp
+        self.hyp = hyp
+
         # Loggers(ignored)
         self.set_logger()
 
         # Config
         init_seeds(1 + RANK)
         nc, names = self._parse_data()
+        self.maps = np.zeros(nc)  # mAP per class
 
         # Model
         check_suffix(self.weights, ".pt")  # check weights
-        self.pretrained = self.weights.endswith(".pt")
-        ckpt = self.load_model(nc, hyp)
+        pretrained = self.weights.endswith(".pt")
+        ckpt = self.load_model(nc, pretrained)
 
         # Optimizer
-        self.optimizer, self.scheduler = self.set_optimizer(hyp)
+        self.optimizer, self.scheduler = self.set_optimizer()
 
         # EMA
         self.ema = ModelEMA(self.model) if RANK in [-1, 0] else None
 
-        # Resume
-        if self.pretrained:
+        # Resume optimizer, epochs, scheduler, best_fitness
+        if pretrained:
             self.resume_train(ckpt)
+        self.scheduler.last_epoch = self.start_epoch - 1  # do not move
 
         # Image sizes
-        self.gs = max(int(self.model.stride.max()), 32)  # grid size (max stride)
-        self.nl = self.model.model[
-            -1
-        ].nl  # number of detection layers (used for scaling hyp['obj'])
+        self.stride = max(int(self.model.stride.max()), 32)  # grid size (max stride)
         self.imgsz = check_img_size(
-            self.opt.imgsz, self.gs, floor=self.gs * 2
+            self.opt.imgsz, self.stride, floor=self.stride * 2
         )  # verify imgsz is gs-multiple
-
-        # Update self.hyp
-        self.hyp = hyp
 
         # initialize dataloader
         self._initialize_loader()
 
         # DP mode
         if self.cuda and RANK == -1 and torch.cuda.device_count() > 1:
-            logging.warning(
-                "DP not recommended, instead use torch.distributed.run for best DDP Multi-GPU results.\n"
-                "See Multi-GPU Tutorial at https://github.com/ultralytics/yolov5/issues/475 to get started."
+            raise ValueError(
+                "Please use `DDP`, such as '$ python -m torch.distributed.launch --nproc_per_node 2 "
+                "train.py --batch 64 --data coco.yaml --cfg yolov5s.yaml --weights '' --device 0,1'"
             )
-            self.model = torch.nn.DataParallel(self.model)
 
         # SyncBatchNorm
         if self.opt.sync_bn and self.cuda and RANK != -1:
-            self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model).to(
-                self.device
-            )
+            self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model).to(self.device)
             LOGGER.info("Using SyncBatchNorm()")
 
         # Trainloader
@@ -227,7 +229,7 @@ class Trainer:
             area_thr=self.opt.area_thr,
         )
 
-        self.nb = len(self.train_loader)  # number of batches
+        self.batches = len(self.train_loader)  # number of batches
         mlc = int(np.concatenate(self.dataset.labels, 0)[:, 0].max())  # max label class
         assert (
             mlc < nc
@@ -247,9 +249,6 @@ class Trainer:
 
             if not self.resume:
                 labels = np.concatenate(self.dataset.labels, 0)
-                # c = torch.tensor(labels[:, 0])  # classes
-                # cf = torch.bincount(c.long(), minlength=nc) + 1.  # frequency
-                # model._initialize_biases(cf.to(device))
                 if self.plots:
                     plot_labels(labels, names, self.save_dir)
 
@@ -258,49 +257,39 @@ class Trainer:
                     check_anchors(
                         self.dataset,
                         model=self.model,
-                        thr=hyp["anchor_t"],
+                        thr=self.hyp["anchor_t"],
                         imgsz=self.imgsz,
                     )
                 self.model.half().float()  # pre-reduce anchor precision
 
         # DDP mode
         if self.cuda and RANK != -1:
-            self.model = DDP(
-                self.model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK
-            )
+            self.model = DDP(self.model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
 
         # Model parameters
-        self.set_parameters(hyp, nc, names)
+        nl = self.model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
+        self.set_parameters(nc, nl, names)
 
-        # Start training
-        self.nw = max(
-            round(hyp["warmup_epochs"] * self.nb), 1000
+        # warmup epochs
+        self.warmup_iters = max(
+            round(self.hyp["warmup_epochs"] * self.batches), 1000
         )  # number of warmup iterations, max(3 epochs, 1k iterations)
-        # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
 
-        self.maps = np.zeros(nc)  # mAP per class
-        self.scheduler.last_epoch = self.start_epoch - 1  # do not move
-        self.scaler = amp.GradScaler(enabled=self.cuda)
-        self.stopper = EarlyStopping(patience=self.opt.patience)
+        # loss function
         self.compute_loss = ComputeLoss(self.model)  # init loss class
+
+        # initialize eval
+        # self._initialize_eval()
+
+        if self.no_aug_epochs > 0:
+            base_idx = (self.epochs - self.no_aug_epochs) * self.batches
+            self.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
 
         LOGGER.info(
             f"Image sizes {self.imgsz} train, {self.imgsz} val\n"
             f"Using {self.train_loader.num_workers} dataloader workers\n"
             f"Logging results to {colorstr('bold', self.save_dir)}\n"
             f"Starting training for {self.epochs} epochs..."
-        )
-        if self.no_aug_epochs > 0:
-            base_idx = (self.epochs - self.no_aug_epochs) * self.nb
-            self.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
-
-        # initialize eval
-        # self._initialize_eval()
-        self.evaluator = Yolov5Evaluator(
-            data=self.data_dict,
-            single_cls=self.single_cls,
-            save_dir=self.save_dir,
-            plots=False,
         )
 
     def after_train(self):
@@ -348,6 +337,8 @@ class Trainer:
 
     def before_epoch(self, epoch):
         self.epoch = epoch
+        self.mloss = torch.zeros(3, device=self.device)  # mean losses
+
         self.model.train()
         if self.epoch >= (self.epochs - self.no_aug_epochs):
             self.train_loader.close_augment()
@@ -368,17 +359,15 @@ class Trainer:
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
-        self.mloss = torch.zeros(3, device=self.device)  # mean losses
         if RANK != -1:
             self.train_loader.batch_sampler.sampler.set_epoch(self.epoch)
 
         self.pbar = enumerate(self.train_loader)
         LOGGER.info(
-            ("\n" + "%10s" * 7)
-            % ("Epoch", "gpu_mem", "box", "obj", "cls", "labels", "img_size")
+            ("\n" + "%10s" * 7) % ("Epoch", "gpu_mem", "box", "obj", "cls", "labels", "img_size")
         )
         if RANK in [-1, 0]:
-            self.pbar = tqdm(self.pbar, total=self.nb)  # progress bar
+            self.pbar = tqdm(self.pbar, total=self.batches)  # progress bar
         self.optimizer.zero_grad()
 
     def after_epoch(self):
@@ -405,12 +394,14 @@ class Trainer:
         )  # uint8 to float32, 0-255 to 0.0-1.0
         return imgs
 
-    def after_iter(self, i, imgs, targets, paths):
+    def after_iter(self, i, imgs, targets, paths, loss_items):
         # Log
         if RANK not in [-1, 0]:
             return
-        self.mloss = (self.mloss * i + self.loss_items) / (i + 1)  # update mean losses
-        mem = f"{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G"  # (GB)
+        self.mloss = (self.mloss * i + loss_items) / (i + 1)  # update mean losses
+        mem = (
+            f"{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G"  # (GB)
+        )
         self.pbar.set_description(
             ("%10s" * 2 + "%10.4g" * 5)
             % (
@@ -423,7 +414,7 @@ class Trainer:
         )
         self.callbacks.run(
             "on_train_batch_end",
-            self.ni,
+            self.iter,
             self.model,
             imgs,
             targets,
@@ -482,9 +473,7 @@ class Trainer:
         if fi > self.best_fitness:
             self.best_fitness = fi
         log_vals = list(self.mloss) + list(self.results) + lr
-        self.callbacks.run(
-            "on_fit_epoch_end", log_vals, self.epoch, self.best_fitness, fi
-        )
+        self.callbacks.run("on_fit_epoch_end", log_vals, self.epoch, self.best_fitness, fi)
 
         # Save model
         if (not self.nosave) or final_epoch:  # if save
@@ -521,35 +510,28 @@ class Trainer:
             torch.save(ckpt, self.w / f"epoch{self.epoch}.pt")
         del ckpt
 
-    def load_model(self, nc, hyp):
+    def load_model(self, nc, pretrained):
         ckpt = None
-        if self.pretrained:
+        if pretrained:
             with torch_distributed_zero_first(LOCAL_RANK):
-                self.weights = attempt_download(
-                    self.weights
-                )  # download if not found locally
-            print(self.weights)
+                self.weights = attempt_download(self.weights)  # download if not found locally
             ckpt = torch.load(self.weights, map_location=self.device)  # load checkpoint
             self.model = Model(
-                self.cfg or ckpt["model"].yaml, ch=3, nc=nc, anchors=hyp.get("anchors")
+                self.cfg or ckpt["model"].yaml, ch=3, nc=nc, anchors=self.hyp.get("anchors")
             ).to(
                 self.device
             )  # create
             exclude = (
-                ["anchor"]
-                if (self.cfg or hyp.get("anchors")) and not self.resume
-                else []
+                ["anchor"] if (self.cfg or self.hyp.get("anchors")) and not self.resume else []
             )  # exclude keys
             csd = ckpt["model"].float().state_dict()  # checkpoint state_dict as FP32
-            csd = intersect_dicts(
-                csd, self.model.state_dict(), exclude=exclude
-            )  # intersect
+            csd = intersect_dicts(csd, self.model.state_dict(), exclude=exclude)  # intersect
             self.model.load_state_dict(csd, strict=False)  # load
             LOGGER.info(
                 f"Transferred {len(csd)}/{len(self.model.state_dict())} items from {self.weights}"
             )  # report
         else:
-            self.model = Model(self.cfg, ch=3, nc=nc, anchors=hyp.get("anchors")).to(
+            self.model = Model(self.cfg, ch=3, nc=nc, anchors=self.hyp.get("anchors")).to(
                 self.device
             )  # create
 
@@ -565,15 +547,15 @@ class Trainer:
 
         return ckpt
 
-    def set_optimizer(self, hyp):
+    def set_optimizer(self):
         self.nbs = 64  # nominal batch size
         self.accumulate = max(
             round(self.nbs / self.batch_size), 1
         )  # accumulate loss before optimizing
-        hyp["weight_decay"] *= (
+        self.hyp["weight_decay"] *= (
             self.batch_size * self.accumulate / self.nbs
         )  # scale weight_decay
-        LOGGER.info(f"Scaled weight_decay = {hyp['weight_decay']}")
+        LOGGER.info(f"Scaled weight_decay = {self.hyp['weight_decay']}")
 
         g0, g1, g2 = [], [], []  # optimizer parameter groups
         for v in self.model.modules():
@@ -581,20 +563,18 @@ class Trainer:
                 g2.append(v.bias)
             if isinstance(v, nn.BatchNorm2d):  # weight (no decay)
                 g0.append(v.weight)
-            elif hasattr(v, "weight") and isinstance(
-                v.weight, nn.Parameter
-            ):  # weight (with decay)
+            elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):  # weight (with decay)
                 g1.append(v.weight)
 
         if self.opt.adam:
             optimizer = Adam(
-                g0, lr=hyp["lr0"], betas=(hyp["momentum"], 0.999)
+                g0, lr=self.hyp["lr0"], betas=(self.hyp["momentum"], 0.999)
             )  # adjust beta1 to momentum
         else:
-            optimizer = SGD(g0, lr=hyp["lr0"], momentum=hyp["momentum"], nesterov=True)
+            optimizer = SGD(g0, lr=self.hyp["lr0"], momentum=self.hyp["momentum"], nesterov=True)
 
         optimizer.add_param_group(
-            {"params": g1, "weight_decay": hyp["weight_decay"]}
+            {"params": g1, "weight_decay": self.hyp["weight_decay"]}
         )  # add g1 with weight_decay
         optimizer.add_param_group({"params": g2})  # add g2 (biases)
         LOGGER.info(
@@ -606,10 +586,10 @@ class Trainer:
         # Scheduler
         if self.opt.linear_lr:
             self.lf = (
-                lambda x: (1 - x / (self.epochs - 1)) * (1.0 - hyp["lrf"]) + hyp["lrf"]
+                lambda x: (1 - x / (self.epochs - 1)) * (1.0 - self.hyp["lrf"]) + self.hyp["lrf"]
             )  # linear
         else:
-            self.lf = one_cycle(1, hyp["lrf"], self.epochs)  # cosine 1->hyp['lrf']
+            self.lf = one_cycle(1, self.hyp["lrf"], self.epochs)  # cosine 1->hyp['lrf']
         scheduler = lr_scheduler.LambdaLR(
             optimizer, lr_lambda=self.lf
         )  # plot_lr_scheduler(optimizer, scheduler, epochs)
@@ -626,15 +606,13 @@ class Trainer:
         for k in methods(loggers):
             self.callbacks.register_action(k, callback=getattr(loggers, k))
 
-    def set_parameters(self, hyp, nc, names):
-        hyp["box"] *= 3.0 / self.nl  # scale to layers
-        hyp["cls"] *= nc / 80.0 * 3.0 / self.nl  # scale to classes and layers
-        hyp["obj"] *= (
-            (self.imgsz / 640) ** 2 * 3.0 / self.nl
-        )  # scale to image size and layers
-        hyp["label_smoothing"] = self.opt.label_smoothing
+    def set_parameters(self, nc, nl, names):
+        self.hyp["box"] *= 3.0 / nl  # scale to layers
+        self.hyp["cls"] *= nc / 80.0 * 3.0 / nl  # scale to classes and layers
+        self.hyp["obj"] *= (self.imgsz / 640) ** 2 * 3.0 / nl  # scale to image size and layers
+        self.hyp["label_smoothing"] = self.opt.label_smoothing
         self.model.nc = nc  # attach number of classes to model
-        self.model.hyp = hyp  # attach hyperparameters to model
+        self.model.hyp = self.hyp  # attach hyperparameters to model
         self.model.class_weights = (
             labels_to_class_weights(self.dataset.labels, nc).to(self.device) * nc
         )  # attach class weights
@@ -657,31 +635,25 @@ class Trainer:
         self.t0 = time.time()
 
     def _parse_data(self):
-        with torch_distributed_zero_first(LOCAL_RANK):
-            data_dict = check_dataset(self.data)  # check if None
-        nc = 1 if self.single_cls else int(data_dict["nc"])  # number of classes
+        nc = 1 if self.single_cls else int(self.data_dict["nc"])  # number of classes
         names = (
             ["item"]
-            if self.single_cls and len(data_dict["names"]) != 1
-            else data_dict["names"]
+            if self.single_cls and len(self.data_dict["names"]) != 1
+            else self.data_dict["names"]
         )  # class names
         assert (
             len(names) == nc
         ), f"{len(names)} names found for nc={nc} dataset in {self.data}"  # check
         self.is_coco = self.data.endswith("coco.yaml") and nc == 80  # COCO dataset
-        self.data_dict = data_dict
         return nc, names
 
     def _warmup(self):
-        xi = [0, self.nw]  # x interp
-        # compute_loss.gr = np.interp(self.ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
-        self.accumulate = max(
-            1, np.interp(self.ni, xi, [1, self.nbs / self.batch_size]).round()
-        )
+        xi = [0, self.warmup_iters]  # x interp
+        self.accumulate = max(1, np.interp(self.iter, xi, [1, self.nbs / self.batch_size]).round())
         for j, x in enumerate(self.optimizer.param_groups):
             # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
             x["lr"] = np.interp(
-                self.ni,
+                self.iter,
                 xi,
                 [
                     self.hyp["warmup_bias_lr"] if j == 2 else 0.0,
@@ -690,23 +662,21 @@ class Trainer:
             )
             if "momentum" in x:
                 x["momentum"] = np.interp(
-                    self.ni, xi, [self.hyp["warmup_momentum"], self.hyp["momentum"]]
+                    self.iter, xi, [self.hyp["warmup_momentum"], self.hyp["momentum"]]
                 )
 
     def _multi_scale(self, imgs):
         sz = (
-            random.randrange(self.imgsz * 0.5, self.imgsz * 1.5 + self.gs)
-            // self.gs
-            * self.gs
+            random.randrange(self.imgsz * 0.5, self.imgsz * 1.5 + self.stride)
+            // self.stride
+            * self.stride
         )  # size
         sf = sz / max(imgs.shape[2:])  # scale factor
         if sf != 1:
             ns = [
-                math.ceil(x * sf / self.gs) * self.gs for x in imgs.shape[2:]
+                math.ceil(x * sf / self.stride) * self.stride for x in imgs.shape[2:]
             ]  # new shape (stretched to gs-multiple)
-            imgs = nn.functional.interpolate(
-                imgs, size=ns, mode="bilinear", align_corners=False
-            )
+            imgs = nn.functional.interpolate(imgs, size=ns, mode="bilinear", align_corners=False)
         return imgs
 
     def _initialize_loader(self):
@@ -714,7 +684,7 @@ class Trainer:
         self.create_dataloader = partial(
             create_dataloader,
             imgsz=self.imgsz,
-            stride=self.gs,
+            stride=self.stride,
             single_cls=self.single_cls,
             hyp=self.hyp,
             workers=self.workers,

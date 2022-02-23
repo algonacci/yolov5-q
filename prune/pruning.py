@@ -5,13 +5,13 @@ import argparse
 import numpy as np
 import torch
 import torch.nn as nn
-import torch_pruning as tp
+import yolov5.torch_pruning as tp
 import copy
 import matplotlib.pyplot as plt
-from models.yolo import Model
-from utils.general import check_yaml
+from yolov5.models.yolo import Model
+from yolov5.utils.general import check_yaml
 from val_sparse import run
-from models.experimental import attempt_load
+from yolov5.models.experimental import attempt_load
 
 
 def load_model(cfg="models/mobile-yolo5l_voc.yaml", weights="./outputs/mvoc/weights/best_mvoc.pt"):
