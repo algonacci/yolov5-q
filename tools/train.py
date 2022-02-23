@@ -30,7 +30,7 @@ from yolov5.utils.general import (
 )
 from yolov5.utils.torch_utils import select_device
 from yolov5.utils.callbacks import Callbacks
-from yolov5.core import Trainer
+from yolov5.core.trainer import Trainer
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_RANK = int(
@@ -189,6 +189,12 @@ def parse_opt(known=False):
         type=int,
         default=15,
         help="box after augment / origin box areas",
+    )
+
+    parser.add_argument(
+        "--mask",
+        action="store_true",
+        help="Whether to train the instance segmentation",
     )
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()

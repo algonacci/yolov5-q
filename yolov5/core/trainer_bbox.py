@@ -48,8 +48,8 @@ from ..utils.torch_utils import (
     torch_distributed_zero_first,
 )
 from ..utils.metrics import fitness
-from ..utils.newloggers import NewLoggers, NewLoggersMask
-from .evaluator_seg import Yolov5Evaluator
+from ..utils.newloggers import NewLoggers
+from .evaluator import Yolov5Evaluator
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
@@ -74,7 +74,6 @@ class Trainer:
         self.workers = opt.workers
         self.freeze = opt.freeze
         self.no_aug_epochs = opt.no_aug_epochs
-        self.mask = opt.mask
 
         self.cuda = device.type != "cpu"
         self.callbacks = callbacks
@@ -90,7 +89,6 @@ class Trainer:
             single_cls=self.single_cls,
             save_dir=self.save_dir,
             plots=False,
-            mask=self.mask,
         )
 
         # initialize some base value
@@ -110,12 +108,12 @@ class Trainer:
                 break
 
     def train_in_iter(self):
-        for i, (imgs, targets, paths, _, masks) in self.pbar:
+        for i, (imgs, targets, paths, _, _) in self.pbar:
             imgs = self.before_iter(imgs)
-            loss_items = self.train_one_iter(i, imgs, targets, masks)
-            self.after_iter(i, imgs, targets, masks, paths, loss_items)
+            loss_items = self.train_one_iter(i, imgs, targets)
+            self.after_iter(i, imgs, targets, paths, loss_items)
 
-    def train_one_iter(self, i, imgs, targets, masks):
+    def train_one_iter(self, i, imgs, targets):
         self.iter = i + self.batches * self.epoch  # number integrated batches (since train start)
 
         # Warmup
@@ -129,9 +127,8 @@ class Trainer:
         # Forward
         with amp.autocast(enabled=self.cuda):
             pred = self.model(imgs)  # forward
-            # TODO: modify
             loss, loss_items = self.compute_loss(
-                pred, targets.to(self.device), masks=masks.to(self.device) if self.mask else masks
+                pred, targets.to(self.device)
             )  # loss scaled by batch_size
             if RANK != -1:
                 loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
@@ -328,10 +325,7 @@ class Trainer:
             #     verbose=True,
             #     plots=True,
             # )  # val best model with plots
-
-            # TODO: modify
-            if not self.mask:
-                self.evaluator.plots = True
+            self.evaluator.plots = True
             self.results, _, _ = self.evaluator.run_training(
                 model=attempt_load(f, self.device).half(),
                 dataloader=self.val_loader,
@@ -346,8 +340,7 @@ class Trainer:
                     self.fi,
                 )
 
-        # TODO: modify
-        self.callbacks.run("on_train_end", self.plots, self.epoch, masks=self.mask)
+        self.callbacks.run("on_train_end", self.plots, self.epoch)
         LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
 
         torch.cuda.empty_cache()
@@ -359,9 +352,7 @@ class Trainer:
         - close augment
         """
         self.epoch = epoch
-        # TODO: modify
-        nloss = 4 if self.mask else 3  #  (obj, cls, box, [seg])
-        self.mloss = torch.zeros(nloss, device=self.device)  # mean losses
+        self.mloss = torch.zeros(3, device=self.device)  # mean losses
 
         self.model.train()
         if self.epoch >= (self.epochs - self.no_aug_epochs):
@@ -391,20 +382,14 @@ class Trainer:
             self.pbar = tqdm(self.pbar, total=self.batches)  # progress bar
         self.optimizer.zero_grad()
 
-        # TODO: modify
-        s = (
-            ("\n" + "%10s" * 8)
-            % ("Epoch", "gpu_mem", "box", "seg", "obj", "cls", "labels", "img_size")
-            if self.mask
-            else ("\n" + "%10s" * 7)
-            % ("Epoch", "gpu_mem", "box", "obj", "cls", "labels", "img_size")
+        LOGGER.info(
+            ("\n" + "%10s" * 7) % ("Epoch", "gpu_mem", "box", "obj", "cls", "labels", "img_size")
         )
-        LOGGER.info(s)
 
     def after_epoch(self):
         """
         - lr scheduler
-        - evaluation
+        - evaluation 
         - save model
         """
         # Scheduler
@@ -430,7 +415,7 @@ class Trainer:
         )  # uint8 to float32, 0-255 to 0.0-1.0
         return imgs
 
-    def after_iter(self, i, imgs, targets, masks, paths, loss_items):
+    def after_iter(self, i, imgs, targets, paths, loss_items):
         """
         - logger info
         """
@@ -441,9 +426,8 @@ class Trainer:
         mem = (
             f"{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G"  # (GB)
         )
-        # TODO: modify
         self.pbar.set_description(
-            ("%10s" * 2 + "%10.4g" * (6 if self.mask else 5))
+            ("%10s" * 2 + "%10.4g" * 5)
             % (
                 f"{self.epoch}/{self.epochs - 1}",
                 mem,
@@ -458,7 +442,6 @@ class Trainer:
             self.model,
             imgs,
             targets,
-            masks,
             paths,
             self.plots,
             self.opt.sync_bn,
@@ -509,7 +492,7 @@ class Trainer:
 
         # Update best mAP
         fi = fitness(
-            np.array(self.results).reshape(1, -1), masks=self.mask
+            np.array(self.results).reshape(1, -1)
         )  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
         if fi > self.best_fitness:
             self.best_fitness = fi
@@ -637,11 +620,9 @@ class Trainer:
         return optimizer, scheduler
 
     def set_logger(self):
-        # TODO: modify
         if RANK not in [-1, 0]:
             return
-        newloggers = NewLoggersMask if self.mask else NewLoggers
-        loggers = newloggers(
+        loggers = NewLoggers(
             save_dir=self.save_dir, opt=self.opt, logger=LOGGER
         )  # loggers instance
 
@@ -664,11 +645,15 @@ class Trainer:
     def _initializtion(self):
         self.start_epoch, self.best_fitness = 0, 0.0
         self.last_opt_step = -1
-        # TODO: modify
-        # P(B), R(B), mAP@.5(B), mAP@.5-.95(B),
-        # P(M), R(M), mAP@.5(M), mAP@.5-.95(M),
-        # val_loss(box, seg, obj, cls)
-        self.results = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) if self.mask else (0, 0, 0, 0, 0, 0, 0)
+        self.results = (
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
         self.plot_idx = [0, 1, 2]
         self.plots = True  # create plots
         self.t0 = time.time()
@@ -719,7 +704,6 @@ class Trainer:
         return imgs
 
     def _initialize_loader(self):
-        # TODO: modify
         # functions
         self.create_dataloader = partial(
             create_dataloader,
@@ -728,7 +712,6 @@ class Trainer:
             single_cls=self.single_cls,
             hyp=self.hyp,
             workers=self.workers,
-            mask_head=self.mask,
         )
 
     def _initialize_eval(self):

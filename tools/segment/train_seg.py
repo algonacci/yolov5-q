@@ -334,7 +334,8 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
     # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
     last_opt_step = -1
     maps = np.zeros(nc)  # mAP per class
-    results = (0, 0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
+    # P(B), R(B), mAP@.5(B), mAP@.5-.95(B), P(M), R(M), mAP@.5(M), mAP@.5-.95(M), val_loss(box, seg, obj, cls)
+    results = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)  
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
     stopper = EarlyStopping(patience=opt.patience)
@@ -369,7 +370,7 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
         if RANK != -1:
             train_loader.batch_sampler.sampler.set_epoch(epoch)
         pbar = enumerate(train_loader)
-        LOGGER.info(("\n" + "%10s" * 8) % ("Epoch", "gpu_mem", "box", "obj", "cls", "seg", "labels", "img_size"))
+        LOGGER.info(("\n" + "%10s" * 8) % ("Epoch", "gpu_mem", "box", "seg", "obj", "cls", "labels", "img_size"))
         if RANK in [-1, 0]:
             pbar = tqdm(pbar, total=nb)  # progress bar
         optimizer.zero_grad()
@@ -520,7 +521,6 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
                     if is_coco:
                         callbacks.run("on_fit_epoch_end", list(mloss) + list(results) + lr, epoch, best_fitness, fi)
 
-        # TODO: plot_results
         callbacks.run("on_train_end", last, best, plots, epoch, results, masks=True)
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}")
 

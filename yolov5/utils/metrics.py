@@ -101,8 +101,8 @@ def ap_per_class(
 
 
 def ap_per_class_box_and_mask(
-    tp_b,
     tp_m,
+    tp_b,
     conf,
     pred_cls,
     target_cls,

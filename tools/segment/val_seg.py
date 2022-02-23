@@ -23,7 +23,7 @@ ROOT = FILE.parents[1]  # YOLOv5 root directory
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from yolov5.models.experimental import attempt_load
-from yolov5.utils.datasets import create_dataloader_ori
+from yolov5.utils.datasets import create_dataloader
 from yolov5.utils.general import (
     coco80_to_coco91_class,
     check_dataset,
@@ -232,7 +232,7 @@ def run(
         task = (
             task if task in ("train", "val", "test") else "val"
         )  # path to train/val/test images
-        dataloader = create_dataloader_ori(
+        dataloader = create_dataloader(
             data[task],
             imgsz,
             batch_size,
@@ -315,14 +315,15 @@ def run(
         dt[0] += t2 - t1
 
         # Run model
-        out, train_out, proto_out = model(
+        out, train_out = model(
             img, augment=augment
         )  # inference and training outputs
+        proto_out = train_out[1]
         dt[1] += time_sync() - t2
 
         # Compute loss
         if compute_loss:
-            loss += compute_loss((train_out, proto_out), targets, masks)[
+            loss += compute_loss(train_out, targets, masks)[
                 1
             ]  # box, obj, cls, seg
 
@@ -352,7 +353,8 @@ def run(
                 if nl:
                     stats.append(
                         (
-                            torch.zeros(0, niou, dtype=torch.bool),
+                            torch.zeros(0, niou, dtype=torch.bool),  # boxes
+                            torch.zeros(0, niou, dtype=torch.bool),  # masks
                             torch.Tensor(),
                             torch.Tensor(),
                             tcls,
@@ -376,7 +378,7 @@ def run(
 
                 # mask
                 correct_masks, pred_maski = process_batch_masks(
-                    predn, proto_out[si], masksi, labelsn, iouv, img.shape[2:]
+                    predn, proto_out[si], masksi, labelsn, iouv, plots
                 )
                 if plots:
                     pred_masks.append(pred_maski.detach().int())
@@ -386,8 +388,8 @@ def run(
                 correct_masks = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
             stats.append(
                 (
-                    correct_boxes.cpu(),
                     correct_masks.cpu(),
+                    correct_boxes.cpu(),
                     pred[:, 4].cpu(),
                     pred[:, 5].cpu(),
                     tcls,

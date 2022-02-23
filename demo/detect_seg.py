@@ -122,7 +122,8 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
 
         # Inference
         visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
-        pred, _, proto_out = model(im, augment=augment, visualize=visualize, val=True)
+        pred, out = model(im, augment=augment, visualize=visualize, val=True)
+        proto_out = out[1]
         t3 = time_sync()
         dt[1] += t3 - t2
 

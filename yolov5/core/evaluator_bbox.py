@@ -6,6 +6,7 @@ Usage:
     $ python path/to/val.py --data coco128.yaml --weights yolov5s.pt --img 640
 """
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -13,7 +14,6 @@ from threading import Thread
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from tqdm import tqdm
 
 FILE = Path(__file__).resolve()
@@ -29,18 +29,14 @@ from ..utils.general import (
     check_suffix,
     box_iou,
     non_max_suppression,
-    non_max_suppression_masks,
     scale_coords,
     xyxy2xywh,
     xywh2xyxy,
     increment_path,
     colorstr,
-    process_mask,
-    process_mask_upsample,
-    mask_iou,
 )
-from ..utils.metrics import ap_per_class, ap_per_class_box_and_mask, ConfusionMatrix
-from ..utils.plots import output_to_target, plot_images_boxes_and_masks
+from ..utils.metrics import ap_per_class, ConfusionMatrix
+from ..utils.plots import output_to_target, plot_images
 from ..utils.torch_utils import select_device, time_sync
 
 
@@ -48,7 +44,9 @@ def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
     gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
     for *xyxy, conf, cls in predn.tolist():
-        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+        xywh = (
+            (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()
+        )  # normalized xywh
         line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
         with open(file, "a") as f:
             f.write(("%g " * len(line)).rstrip() % line + "\n")
@@ -87,7 +85,6 @@ class Yolov5Evaluator:
         half=True,
         save_dir=Path(""),
         plots=True,
-        mask=False,
     ) -> None:
         self.data = check_dataset(data)  # check
         self.conf_thres = conf_thres  # confidence threshold
@@ -102,7 +99,6 @@ class Yolov5Evaluator:
         self.half = half  # use FP16 half-precision inference
         self.save_dir = save_dir
         self.plots = plots
-        self.mask = mask
 
         self.nc = 1 if self.single_cls else int(self.data["nc"])  # number of classes
         self.iouv = torch.linspace(0.5, 0.95, 10)  # iou vector for mAP@0.5:0.95
@@ -110,73 +106,48 @@ class Yolov5Evaluator:
         self.confusion_matrix = ConfusionMatrix(nc=self.nc)
         self.dt = [0.0, 0.0, 0.0]
         self.names = {k: v for k, v in enumerate(self.data["names"])}
-        self.s = (
-            ("%20s" + "%11s" * 10)
-            % (
-                "Class",
-                "Images",
-                "Labels",
-                "Box:{P",
-                "R",
-                "mAP@.5",
-                "mAP@.5:.95}",
-                "Mask:{P",
-                "R",
-                "mAP@.5",
-                "mAP@.5:.95}",
-            )
-            if self.mask
-            else ("%20s" + "%11s" * 6)
-            % (
-                "Class",
-                "Images",
-                "Labels",
-                "P",
-                "R",
-                "mAP@.5",
-                "mAP@.5:.95",
-            )
+        self.s = ("%20s" + "%11s" * 6) % (
+            "Class",
+            "Images",
+            "Labels",
+            "P",
+            "R",
+            "mAP@.5",
+            "mAP@.5:.95",
         )
 
         # coco stuff
-        self.is_coco = isinstance(self.data.get("val"), str) and self.data["val"].endswith(
+        self.is_coco = isinstance(self.data.get("val"), str) and self.data[
+            "val"
+        ].endswith(
             "coco/val2017.txt"
         )  # COCO dataset
         self.class_map = coco80_to_coco91_class() if self.is_coco else list(range(1000))
         self.jdict = []
         self.iou_thres = 0.65 if self.is_coco else self.iou_thres
 
-        # masks stuff
-        self.pred_masks = []  # for mask visualization
-
         # metric stuff
         self.seen = 0
         self.stats = []
-        self.total_loss = torch.zeros((4 if self.mask else 3))
-        self.metric = Metrics() if self.mask else Metric()
+        self.total_loss = torch.zeros(3)
+        self.metric = Metric()
 
     def run_training(self, model, dataloader, compute_loss=None):
         """This is for evaluation when training."""
         self.device = next(model.parameters()).device  # get model device
         # self.iouv.to(self.device)
-        self.total_loss = torch.zeros((4 if self.mask else 3), device=self.device)
+        self.total_loss = torch.zeros(3, device=self.device)
         self.half &= self.device.type != "cpu"  # half precision only supported on CUDA
         model.half() if self.half else model.float()
         # Configure
         model.eval()
 
         # inference
-        # masks will be `None` if training objection.
-        for batch_i, (img, targets, paths, shapes, masks) in enumerate(
+        for batch_i, (img, targets, paths, shapes, _) in enumerate(
             tqdm(dataloader, desc=self.s)
         ):
-            # reset pred_masks
-            self.pred_masks = []
-            img = img.to(self.device, non_blocking=True)
             targets = targets.to(self.device)
-            if masks is not None:
-                masks = masks.to(self.device)
-            out, train_out = self.inference(model, img, targets, masks, compute_loss)
+            out = self.inference(model, img, targets, compute_loss)
 
             # Statistics per image
             for si, pred in enumerate(out):
@@ -185,14 +156,14 @@ class Yolov5Evaluator:
 
                 # I tested `compute_stat` and `compute_stat_native`,
                 # it shows the same results.
-                # but maybe I didn't do enough experiments,
+                # but maybe I didn't do enough experiments, 
                 # so I left the related code(`compute_stat_native`).
-                self.compute_stat(si, predn, targets, masks, train_out)
+                self.compute_stat(si, predn, targets)
                 # shape = shapes[si][0]
                 # ratio_pad = shapes[si][1]
-                # self.compute_stat_native(si, img, predn, targets, masks, train_out, shape, ratio_pad)
+                # self.compute_stat_native(si, img, predn, targets, shape, ratio_pad)
 
-            self.plot_images(batch_i, img, targets, masks, out, paths)
+            self.plot_images(batch_i, img, targets, out, paths)
 
         # compute map and print it.
         t = self.after_infer()
@@ -201,7 +172,7 @@ class Yolov5Evaluator:
         model.float()  # for training
         return (
             (
-                *self.metric.mean_results(),
+                *self.metric.results(),
                 *(self.total_loss.cpu() / len(dataloader)).tolist(),
             ),
             self.metric.get_maps(self.nc),
@@ -227,14 +198,11 @@ class Yolov5Evaluator:
         model.eval()
 
         # inference
-        for batch_i, (img, targets, paths, shapes, masks) in enumerate(tqdm(dataloader, desc=self.s)):
-            # reset pred_masks
-            self.pred_masks = []
-            img = img.to(self.device, non_blocking=True)
+        for batch_i, (img, targets, paths, shapes, _) in enumerate(
+            tqdm(dataloader, desc=self.s)
+        ):
             targets = targets.to(self.device)
-            if masks is not None:
-                masks = masks.to(self.device)
-            out, train_out = self.inference(model, img, targets, masks)
+            out = self.inference(model, img, targets)
 
             # Statistics per image
             for si, pred in enumerate(out):
@@ -245,11 +213,11 @@ class Yolov5Evaluator:
 
                 # I tested `compute_stat` and `compute_stat_native`,
                 # it shows the same results.
-                # but maybe I didn't do enough experiments,
+                # but maybe I didn't do enough experiments, 
                 # so I left the related code(`compute_stat_native`).
-                self.compute_stat(si, predn, targets, masks, train_out)
+                self.compute_stat(si, predn, targets)
                 # ratio_pad = shapes[si][1]
-                # self.compute_stat_native(si, img, predn, targets, masks, train_out, shape, ratio_pad)
+                # self.compute_stat_native(si, img, predn, targets, shape, ratio_pad)
 
                 # Save/log
                 if save_txt:
@@ -264,7 +232,7 @@ class Yolov5Evaluator:
                         pred, self.jdict, path, self.class_map
                     )  # append to COCO-JSON dictionary
 
-            self.plot_images(batch_i, img, targets, masks, out, paths)
+            self.plot_images(batch_i, img, targets, out, paths)
 
         # compute map and print it.
         t = self.after_infer()
@@ -286,7 +254,7 @@ class Yolov5Evaluator:
         # Return results
         return (
             (
-                *self.metric.mean_results(),
+                *self.metric.results(),
                 *(self.total_loss.cpu() / len(dataloader)).tolist(),
             ),
             self.metric.get_maps(self.nc),
@@ -314,10 +282,14 @@ class Yolov5Evaluator:
         # Data
         if self.device.type != "cpu":
             model(
-                torch.zeros(1, 3, imgsz, imgsz).to(self.device).type_as(next(model.parameters()))
+                torch.zeros(1, 3, imgsz, imgsz)
+                .to(self.device)
+                .type_as(next(model.parameters()))
             )  # run once
         pad = 0.0 if task == "speed" else 0.5
-        task = task if task in ("train", "val", "test") else "val"  # path to train/val/test images
+        task = (
+            task if task in ("train", "val", "test") else "val"
+        )  # path to train/val/test images
         dataloader = create_dataloader(
             self.data[task],
             imgsz,
@@ -327,13 +299,13 @@ class Yolov5Evaluator:
             pad=pad,
             rect=True,
             prefix=colorstr(f"{task}: "),
-            mask_head=self.mask,
         )[0]
         return model, dataloader, imgsz
 
-    def inference(self, model, img, targets, masks=None, compute_loss=None):
+    def inference(self, model, img, targets, compute_loss=None):
         """Inference"""
         t1 = time_sync()
+        img = img.to(self.device, non_blocking=True)
         img = img.half() if self.half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         _, _, height, width = img.shape  # batch size, channels, height, width
@@ -341,25 +313,31 @@ class Yolov5Evaluator:
         self.dt[0] += t2 - t1
 
         # Run model
-        out, train_out = model(img, augment=self.augment)  # inference and training outputs
+        out, train_out = model(
+            img, augment=self.augment
+        )  # inference and training outputs
         self.dt[1] += time_sync() - t2
 
         # Compute loss
         if compute_loss:
-            self.total_loss += compute_loss(train_out, targets, masks)[1]  # box, obj, cls
+            self.total_loss += compute_loss([x.float() for x in train_out], targets)[
+                1
+            ]  # box, obj, cls
 
         # Run NMS
-        targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(self.device)  # to pixels
+        targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(
+            self.device
+        )  # to pixels
         t3 = time_sync()
-        out = self.nms(
-            prediction=out,
-            conf_thres=self.conf_thres,
-            iou_thres=self.iou_thres,
+        out = non_max_suppression(
+            out,
+            self.conf_thres,
+            self.iou_thres,
             multi_label=True,
             agnostic=self.single_cls,
         )
         self.dt[2] += time_sync() - t3
-        return out, train_out
+        return out
 
     def after_infer(self):
         """Do something after inference, such as plots and get metrics.
@@ -368,17 +346,17 @@ class Yolov5Evaluator:
         """
         # Plot confusion matrix
         if self.plots:
-            self.confusion_matrix.plot(save_dir=self.save_dir, names=list(self.names.values()))
+            self.confusion_matrix.plot(
+                save_dir=self.save_dir, names=list(self.names.values())
+            )
 
         # Compute statistics
         stats = [np.concatenate(x, 0) for x in zip(*self.stats)]  # to numpy
-        box_or_mask_any = stats[0].any() or stats[1].any()
-        stats = stats[1:] if not self.mask else stats
-        if len(stats) and box_or_mask_any:
-            results = self.ap_per_class(
-                *stats, self.plots, self.save_dir, self.names
+        if len(stats) and stats[0].any():
+            p, r, ap, f1, ap_class = ap_per_class(
+                *stats, plot=self.plots, save_dir=self.save_dir, names=self.names
             )
-            self.metric.update(results)
+            self.metric.set(p, r, ap, f1, ap_class)
             nt = np.bincount(
                 stats[3].astype(np.int64), minlength=self.nc
             )  # number of targets per class
@@ -410,7 +388,9 @@ class Yolov5Evaluator:
         )  # IoU above threshold and classes match
         if x[0].shape[0]:
             matches = (
-                torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
+                torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1)
+                .cpu()
+                .numpy()
             )  # [label, detection, iou]
             if x[0].shape[0] > 1:
                 matches = matches[matches[:, 2].argsort()[::-1]]
@@ -421,56 +401,9 @@ class Yolov5Evaluator:
             correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
         return correct
 
-    def process_batch_masks(self, predn, proto_out, gt_masksi, labels):
-        assert not (
-            (proto_out is None) ^ (gt_masksi is None)
-        ), "`proto_out` and `gt_masksi` should be both None or both exist."
-        if proto_out is None and gt_masksi is None:
-            return torch.zeros(0, self.niou, dtype=torch.bool), None
-
-        correct = torch.zeros(
-            predn.shape[0], self.iouv.shape[0], dtype=torch.bool, device=self.iouv.device
-        )
-        process = process_mask_upsample if self.plots else process_mask
-        pred_maski = (
-            process(proto_out, predn[:, 6:], predn[:, :4], gt_masksi.shape[1:])
-            .permute(2, 0, 1)
-            .contiguous()
-        )
-        if not self.plots:
-            gt_masksi = F.interpolate(
-                gt_masksi.unsqueeze(0),
-                pred_maski.shape[1:],
-                mode="bilinear",
-                align_corners=False,
-            ).squeeze(0)
-        iou = mask_iou(
-            gt_masksi.view(gt_masksi.shape[0], -1), pred_maski.view(pred_maski.shape[0], -1)
-        )
-        x = torch.where(
-            (iou >= self.iouv[0]) & (labels[:, 0:1] == predn[:, 5])
-        )  # IoU above threshold and classes match
-        if x[0].shape[0]:
-            matches = (
-                torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()
-            )  # [label, detection, iou]
-            if x[0].shape[0] > 1:
-                matches = matches[matches[:, 2].argsort()[::-1]]
-                matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-                # matches = matches[matches[:, 2].argsort()[::-1]]
-                matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-            matches = torch.Tensor(matches).to(self.iouv.device)
-            correct[matches[:, 1].long()] = matches[:, 2:3] >= self.iouv
-        return correct, pred_maski
-
-    def compute_stat(self, si, predn, targets, gt_masks, train_out):
+    def compute_stat(self, si, predn, targets):
         """Compute states about ious. with boxs size in training img-size space."""
         labels = targets[targets[:, 0] == si, 1:]
-        # if there is `proto_out`(train_out[1]) and gt_masks is not None,
-        # then masks exist, or there is no masks.
-        masksi = gt_masks if gt_masks is None else gt_masks[targets[:, 0] == si]
-        proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
-
         nl = len(labels)
         tcls = labels[:, 0].tolist() if nl else []  # target class
 
@@ -478,8 +411,7 @@ class Yolov5Evaluator:
             if nl:
                 self.stats.append(
                     (
-                        torch.zeros(0, self.niou, dtype=torch.bool),  # boxes
-                        torch.zeros(0, self.niou, dtype=torch.bool),  # masks
+                        torch.zeros(0, self.niou, dtype=torch.bool),
                         torch.Tensor(),
                         torch.Tensor(),
                         tcls,
@@ -495,38 +427,23 @@ class Yolov5Evaluator:
         if nl:
             tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
             labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-            # boxes
-            correct_boxes = self.process_batch(predn, labelsn, self.iouv)
-
-            # masks
-            correct_masks, pred_maski = self.process_batch_masks(predn, proto_out, masksi, labelsn)
-                
+            correct = self.process_batch(predn, labelsn, self.iouv)
             if self.plots:
                 self.confusion_matrix.process_batch(predn, labelsn)
-                # TODO
-                if pred_maski is not None:
-                    self.pred_masks.append(pred_maski)
         else:
-            correct_boxes = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
-            correct_masks = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
+            correct = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
         self.stats.append(
             (
-                correct_masks.cpu(),
-                correct_boxes.cpu(),
+                correct.cpu(),
                 predn[:, 4].cpu(),
                 predn[:, 5].cpu(),
                 tcls,
             )
         )  # (correct, conf, pcls, tcls)
 
-    def compute_stat_native(self, si, img, predn, targets, gt_masks, train_out, shape, ratio_pad):
+    def compute_stat_native(self, si, img, predn, targets, shape, ratio_pad):
         """Compute states about ious. with boxs size in native space."""
         labels = targets[targets[:, 0] == si, 1:]
-        # if there is `proto_out`(train_out[1]) and gt_masks is not None,
-        # then masks exist, or there is no masks.
-        masksi = gt_masks if gt_masks is None else gt_masks[targets[:, 0] == si]
-        proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
-
         nl = len(labels)
         tcls = labels[:, 0].tolist() if nl else []  # target class
 
@@ -534,8 +451,7 @@ class Yolov5Evaluator:
             if nl:
                 self.stats.append(
                     (
-                        torch.zeros(0, self.niou, dtype=torch.bool),  # boxes
-                        torch.zeros(0, self.niou, dtype=torch.bool),  # masks
+                        torch.zeros(0, self.niou, dtype=torch.bool),
                         torch.Tensor(),
                         torch.Tensor(),
                         tcls,
@@ -546,31 +462,25 @@ class Yolov5Evaluator:
         # Predictions
         if self.single_cls:
             predn[:, 5] = 0
-        scale_coords(img[si].shape[1:], predn[:, :4], shape, ratio_pad)  # native-space pred
+        scale_coords(
+            img[si].shape[1:], predn[:, :4], shape, ratio_pad
+        )  # native-space pred
 
         # Evaluate
         if nl:
             tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-            scale_coords(img[si].shape[1:], tbox, shape, ratio_pad)  # native-space labels
+            scale_coords(
+                img[si].shape[1:], tbox, shape, ratio_pad
+            )  # native-space labels
             labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-            # boxes
-            correct_boxes = self.process_batch(predn, labelsn, self.iouv)
-
-            # masks
-            correct_masks, pred_maski = self.process_batch_masks(predn, proto_out, masksi, labelsn)
-                
+            correct = self.process_batch(predn, labelsn, self.iouv)
             if self.plots:
                 self.confusion_matrix.process_batch(predn, labelsn)
-                # TODO
-                if pred_maski is not None:
-                    self.pred_masks.append(pred_maski)
         else:
-            correct_boxes = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
-            correct_masks = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
+            correct = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
         self.stats.append(
             (
-                correct_masks.cpu(),
-                correct_boxes.cpu(),
+                correct.cpu(),
                 predn[:, 4].cpu(),
                 predn[:, 5].cpu(),
                 tcls,
@@ -579,44 +489,51 @@ class Yolov5Evaluator:
 
     def print_metric(self, nt, stats):
         # Print results
-        pf = "%20s" + "%11i" * 2 + "%11.3g" * (8 if self.mask else 4)
-        print(pf % ("all", self.seen, nt.sum(), *self.metric.mean_results()))
+        pf = "%20s" + "%11i" * 2 + "%11.3g" * 4  # print format
+        print(
+            pf
+            % (
+                "all",
+                self.seen,
+                nt.sum(),
+                self.metric.mp,
+                self.metric.mr,
+                self.metric.map50,
+                self.metric.map,
+            )
+        )
 
         # Print results per class
         if self.verbose and self.nc > 1 and len(stats):
             for i, c in enumerate(self.metric.ap_class_index):
-                print(pf % (self.names[c], self.seen, nt[c], *self.metric.class_result(i)))
+                print(
+                    pf
+                    % (
+                        self.names[c],
+                        self.seen,
+                        nt[c],
+                        self.metric.p[i],
+                        self.metric.r[i],
+                        self.metric.ap50[i],
+                        self.metric.ap[i],
+                    )
+                )
 
-    def plot_images(self, i, img, targets, masks, out, paths):
+    def plot_images(self, i, img, targets, out, paths):
         if (not self.plots) or i >= 3:
             return
-        # plot ground truth
         f = self.save_dir / f"val_batch{i}_labels.jpg"  # labels
         Thread(
-            target=plot_images_boxes_and_masks,
-            args=(img, targets, masks, paths, f, self.names, max(img.shape[2:])),
+            target=plot_images,
+            args=(img, targets, paths, f, self.names),
             daemon=True,
         ).start()
         f = self.save_dir / f"val_batch{i}_pred.jpg"  # predictions
-
-        # plot predition
-        if len(self.pred_masks):
-            pred_masks = (
-                torch.cat(self.pred_masks, dim=0) if len(self.pred_masks) > 1 else self.pred_masks[0]
-            )
-        else:
-            pred_masks = None
         Thread(
-            target=plot_images_boxes_and_masks,
-            args=(img, output_to_target(out), pred_masks, paths, f, self.names, max(img.shape[2:])),
+            target=plot_images,
+            args=(img, output_to_target(out), paths, f, self.names),
             daemon=True,
         ).start()
-
-    def nms(self, **kwargs):
-        return non_max_suppression_masks(**kwargs) if self.mask else non_max_suppression(**kwargs)
-
-    def ap_per_class(self, *args):
-        return ap_per_class_box_and_mask(*args) if self.mask else ap_per_class(*args)
 
 
 class Metric:
@@ -675,13 +592,9 @@ class Metric:
         """
         return self.all_ap.mean() if len(self.all_ap) else 0.0
 
-    def mean_results(self):
-        """Mean of results, return mp, mr, map50, map"""
+    def results(self):
+        """return mp, mr, map50, map"""
         return (self.mp, self.mr, self.map50, self.map)
-
-    def class_result(self, i):
-        """class-aware result, return p[i], r[i], ap50[i], ap[i]"""
-        return (self.p[i], self.r[i], self.ap50[i], self.ap[i])
 
     def get_maps(self, nc):
         maps = np.zeros(nc) + self.map
@@ -689,39 +602,9 @@ class Metric:
             maps[c] = self.ap[i]
         return maps
 
-    def update(self, results):
-        """
-        Args:
-            results: tuple(p, r, ap, f1, ap_class)
-        """
-        p, r, all_ap, f1, ap_class_index = results
+    def set(self, p, r, all_ap, f1, ap_class_index):
         self.p = p
         self.r = r
         self.all_ap = all_ap
         self.f1 = f1
         self.ap_class_index = ap_class_index
-
-
-class Metrics:
-    """Metric for boxes and masks."""
-
-    def __init__(self) -> None:
-        self.metric_box = Metric()
-        self.metric_mask = Metric()
-
-    def update(self, results):
-        """
-        Args:
-            results: Dict{'boxes': Dict{}, 'masks': Dict{}}
-        """
-        self.metric_box.update(list(results["boxes"].values()))
-        self.metric_mask.update(list(results["masks"].values()))
-
-    def mean_results(self):
-        return self.metric_box.mean_results() + self.metric_mask.mean_results()
-
-    def class_result(self, i):
-        return self.metric_box.class_result(i) + self.metric_mask.class_result(i)
-
-    def get_maps(self, nc):
-        return self.metric_box.get_maps(nc) + self.metric_mask.get_maps(nc)

@@ -130,7 +130,7 @@ class DetectSegment(Detect):
             output = torch.cat(z, 1)
             return output  # keep the same type with x
         else:
-            return (x, proto_out) if self.training else (torch.cat(z, 1), x, proto_out)
+            return (x, proto_out) if self.training else (torch.cat(z, 1), (x, proto_out))
 
 
 

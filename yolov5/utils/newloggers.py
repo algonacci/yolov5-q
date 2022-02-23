@@ -75,7 +75,7 @@ class NewLoggers:
         pass
 
     def on_train_batch_end(
-        self, ni, model, imgs, targets, paths, plots, sync_bn, plot_idx
+        self, ni, model, imgs, targets, masks, paths, plots, sync_bn, plot_idx
     ):
         # Callback runs on train batch end
         if plots:
@@ -160,3 +160,86 @@ class NewLoggers:
         # Update hyperparams or configs of the experiment
         # params: A dict containing {param: value} pairs
         pass
+
+
+class NewLoggersMask(NewLoggers):
+    def __init__(
+        self,
+        save_dir=None,
+        opt=None,
+        logger=None,
+        include=LOGGERS,
+    ):
+        super().__init__(save_dir, opt, logger, include)
+        self.keys = [
+            "train/box_loss",
+            "train/seg_loss",  # train loss
+            "train/obj_loss",
+            "train/cls_loss",
+            "metrics/precision(B)",
+            "metrics/recall(B)",
+            "metrics/mAP_0.5(B)",
+            "metrics/mAP_0.5:0.95(B)",  # metrics
+            "metrics/precision(M)",
+            "metrics/recall(M)",
+            "metrics/mAP_0.5(M)",
+            "metrics/mAP_0.5:0.95(M)",  # metrics
+            "val/box_loss",
+            "val/seg_loss",  # val loss
+            "val/obj_loss",
+            "val/cls_loss",
+            "x/lr0",
+            "x/lr1",
+            "x/lr2",
+        ]  # params
+        self.best_keys = [
+            "best/epoch",
+            "best/precision",
+            "best/recall",
+            "best/mAP_0.5",
+            "best/mAP_0.5:0.95",
+        ]
+
+    def on_train_batch_end(
+        self, ni, model, imgs, targets, masks, paths, plots, sync_bn, plot_idx
+    ):
+        # Callback runs on train batch end
+        if plots:
+            if ni == 0:
+                if (
+                    not sync_bn
+                ):  # tb.add_graph() --sync known issue https://github.com/ultralytics/yolov5/issues/3754
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")  # suppress jit trace warning
+                        self.tb.add_graph(
+                            torch.jit.trace(
+                                de_parallel(model), imgs[0:1], strict=False
+                            ),
+                            [],
+                        )
+            if plot_idx is not None and ni in plot_idx:
+                # if ni < 3:
+                f = self.save_dir / f"train_batch{ni}.jpg"  # filename
+                Thread(
+                    target=plot_images_and_masks,
+                    args=(imgs, targets, masks, paths, f),
+                    daemon=True,
+                ).start()
+
+    def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
+        # Callback runs at the end of each fit (train+val) epoch
+        x = {k: v for k, v in zip(self.keys, vals)}  # dict
+        if self.csv:
+            file = self.save_dir / "results.csv"
+            n = len(x) + 1  # number of cols
+            s = (
+                ""
+                if file.exists()
+                else (("%20s," * n % tuple(["epoch"] + self.keys)).rstrip(",") + "\n")
+            )  # add header
+            with open(file, "a") as f:
+                f.write(s + ("%20.5g," * n % tuple([epoch] + vals)).rstrip(",") + "\n")
+
+        if self.tb:
+            for k, v in x.items():
+                self.tb.add_scalar(k, v, epoch)

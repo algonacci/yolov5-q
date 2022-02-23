@@ -39,6 +39,7 @@ def parse_opt():
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
+    parser.add_argument("--mask", action="store_true", help="Whether to train the instance segmentation")
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
@@ -60,6 +61,7 @@ def main(opt):
         name=opt.name,
         exist_ok=opt.exist_ok,
         half=opt.half,
+        mask=opt.mask,
     )
 
     if opt.task in ("train", "val", "test"):  # run normally
