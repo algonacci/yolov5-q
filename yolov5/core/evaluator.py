@@ -334,6 +334,7 @@ class Yolov5Evaluator:
             rect=True,
             prefix=colorstr(f"{task}: "),
             mask_head=self.mask,
+            mask_downsample_ratio=self.mask_downsample_ratio
         )[0]
         return model, dataloader, imgsz
 
@@ -445,6 +446,7 @@ class Yolov5Evaluator:
             .permute(2, 0, 1)
             .contiguous()
         )
+
         if not self.plots:
             gt_masksi = F.interpolate(
                 gt_masksi.unsqueeze(0),
@@ -452,6 +454,7 @@ class Yolov5Evaluator:
                 mode="bilinear",
                 align_corners=False,
             ).squeeze(0)
+
         iou = mask_iou(
             gt_masksi.view(gt_masksi.shape[0], -1), pred_maski.view(pred_maski.shape[0], -1)
         )
@@ -600,6 +603,7 @@ class Yolov5Evaluator:
             return
         # plot ground truth
         f = self.save_dir / f"val_batch{i}_labels.jpg"  # labels
+
         Thread(
             target=plot_images_boxes_and_masks,
             args=(img, targets, masks, paths, f, self.names, max(img.shape[2:])),

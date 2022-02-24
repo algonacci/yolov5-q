@@ -12,7 +12,7 @@
 - [ ] DetectSegment head support `gw`, `gd`
 - [ ] coco eval
 - [ ] cuda memory increase when training with `mosaic augment`
-- [ ] smaller gt_masks for saving memory
+- [X] smaller gt_masks for saving memory(support train.py only)
 - [ ] better way to compute seg loss
 - [X] test `scale_coords` influence for map
 - [ ] DDP

@@ -181,7 +181,7 @@ def parse_opt(known=False):
         "--mask-ratio",
         type=int,
         default=1,
-        help="Whether to train the instance segmentation",
+        help="Downsample ratio of the masks gt.",
     )
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()

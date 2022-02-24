@@ -21,9 +21,9 @@ from yolov5.utils.general import (
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default='yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--batch-size', type=int, default=32, help='batch size')
+    parser.add_argument('-d', '--data', type=str, default='data/coco128.yaml', help='dataset.yaml path')
+    parser.add_argument('-w', '--weights', nargs='+', type=str, default='yolov5s.pt', help='model.pt path(s)')
+    parser.add_argument('-b', '--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
@@ -39,7 +39,9 @@ def parse_opt():
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-    parser.add_argument("--mask", action="store_true", help="Whether to train the instance segmentation")
+    parser.add_argument('-m', "--mask", action="store_true", help="Whether to train the instance segmentation")
+    # parser.add_argument("-mr", "--mask-ratio", type=int, default=1, help="Downsample ratio of the masks gt.")
+
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
@@ -62,6 +64,7 @@ def main(opt):
         exist_ok=opt.exist_ok,
         half=opt.half,
         mask=opt.mask,
+        # mask_downsample_ratio=opt.mask_ratio
     )
 
     if opt.task in ("train", "val", "test"):  # run normally
