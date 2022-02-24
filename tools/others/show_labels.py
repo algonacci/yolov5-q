@@ -27,9 +27,9 @@ dataloader, dataset = create_dataloader(
             # 'data/license_plates/images/train/',
             # '/d/projects/research/yolov5/data/coco/train2017.txt',
             # '/d/projects/research/yolov5/data/coco/val2017.txt',
-            "/home/laughing/yolov5/data/seg/balloon/images/train",
+            "/home/laughing/code/yolov5-6/data/seg/balloon/images/train",
             imgsz=640,
-            batch_size=1,
+            batch_size=4,
             stride=32,
             augment=False,
             shuffle=True,
@@ -47,7 +47,6 @@ for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
     mxywh = targets[:, 2:].cpu()
     mxyxy = xywh2xyxy(mxywh) * torch.tensor((640, 640))[[0, 1, 0, 1]]
     maskssss = masks.permute(1, 2, 0).contiguous()
-    print(maskssss.shape)
     for k in range(maskssss.shape[-1]):
         c1 = (int(mxyxy[k][0]), int(mxyxy[k][1]))
         c2 = (int(mxyxy[k][2]), int(mxyxy[k][3]))

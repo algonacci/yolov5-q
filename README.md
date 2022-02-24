@@ -6,10 +6,12 @@
 - [X] `detect_seg.py`
 - [X] support flip augmentation
 - [X] val
+- [ ] clean `dataset.py`
 - [ ] support albumentations
 - [ ] fix unstable segment loss
 - [ ] Mixup
-- [ ] DetectSegment head support `gw`, `gd`
+- [X] DetectSegment head support `gw`
+- [ ] DetectSegment head support `gd`
 - [ ] coco eval
 - [ ] cuda memory increase when training with `mosaic augment`
 - [X] smaller gt_masks for saving memory(support train.py only)
@@ -73,5 +75,4 @@ python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt 
 - `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
 - `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
 - not support `wandb` and `evolve`, cause I don't need them.
-- looks like `no_mosaic_epoch` will influence the mask training(TODO, bug).
 - Just put a `--mask` option, then you can train and val instance segmentation.

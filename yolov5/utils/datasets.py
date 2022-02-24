@@ -973,6 +973,8 @@ class LoadImagesAndLabels(Dataset):
             [],
         )  # number missing, found, empty, corrupt, messages
         desc = f"{prefix}Scanning '{path.parent / path.stem}' images and labels..."
+
+        # NOTE: Pool stuff will make labels and segments get different order.
         with Pool(NUM_THREADS) as pool:
             pbar = tqdm(
                 pool.imap(
@@ -1234,7 +1236,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             labels = self.labels[index].copy()
-            # [array, array, ....], arrat.shape=(num_points, 2), xyxyxyxy
+            # [array, array, ....], array.shape=(num_points, 2), xyxyxyxy
             segments = self.segments[index].copy()
             # TODO
             if len(segments):
@@ -1255,8 +1257,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             n = len(segments)
             new = np.zeros((n, 4))
             segments = resample_segments(segments)  # upsample
-            w = shape[0] if isinstance(shape, np.ndarray) else shape
-            h = shape[1] if isinstance(shape, np.ndarray) else shape
+            h, w = img.shape[:2]
             for i, segment in enumerate(segments):
                 # clip
                 new[i] = segment2box(segment, w, h)
