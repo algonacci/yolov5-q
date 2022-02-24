@@ -1218,11 +1218,14 @@ def crop(masks, boxes):
         .expand(h, w, n)
     )
 
+    # (1, w, 1), (1, 1, n) -> (1, w, n)
     masks_left = rows >= x1.view(1, 1, -1)
     masks_right = rows < x2.view(1, 1, -1)
+    # (h, 1, 1), (1, 1, n) -> (h, 1, n)
     masks_up = cols >= y1.view(1, 1, -1)
     masks_down = cols < y2.view(1, 1, -1)
 
+    # (h, w, n)
     crop_mask = masks_left * masks_right * masks_up * masks_down
 
     return masks * crop_mask.float()

@@ -26,7 +26,7 @@ dataset = LoadImagesAndLabelsAndMasks(
     # '/d/projects/research/yolov5/data/coco/val2017.txt',
     '/home/laughing/yolov5/data/seg/balloon/images/train',
     img_size=640,
-    augment=True,
+    augment=False,
     cache_images=False,
     hyp=hyp,
 )
@@ -51,6 +51,13 @@ for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
     # for i, (imgs, targets, paths, _) in enumerate(dataset):
     #     print(targets)
     # print(targets)
+    if dataset.downsample_ratio != 1:
+        masks = F.interpolate(
+            masks[None, :],
+            (640, 640),
+            mode="bilinear",
+            align_corners=False,
+        ).squeeze(0)
     result = plot_images_and_masks(images=imgs,
                           targets=targets,
                           paths=paths,

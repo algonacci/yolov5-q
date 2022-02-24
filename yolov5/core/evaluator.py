@@ -88,6 +88,7 @@ class Yolov5Evaluator:
         save_dir=Path(""),
         plots=True,
         mask=False,
+        mask_downsample_ratio=1,
     ) -> None:
         self.data = check_dataset(data)  # check
         self.conf_thres = conf_thres  # confidence threshold
@@ -103,6 +104,7 @@ class Yolov5Evaluator:
         self.save_dir = save_dir
         self.plots = plots
         self.mask = mask
+        self.mask_downsample_ratio = mask_downsample_ratio
 
         self.nc = 1 if self.single_cls else int(self.data["nc"])  # number of classes
         self.iouv = torch.linspace(0.5, 0.95, 10)  # iou vector for mAP@0.5:0.95
@@ -183,6 +185,7 @@ class Yolov5Evaluator:
                 self.seen += 1
                 predn = pred.clone()
 
+                # NOTE
                 # I tested `compute_stat` and `compute_stat_native`,
                 # it shows the same results.
                 # but maybe I didn't do enough experiments,
@@ -227,7 +230,9 @@ class Yolov5Evaluator:
         model.eval()
 
         # inference
-        for batch_i, (img, targets, paths, shapes, masks) in enumerate(tqdm(dataloader, desc=self.s)):
+        for batch_i, (img, targets, paths, shapes, masks) in enumerate(
+            tqdm(dataloader, desc=self.s)
+        ):
             # reset pred_masks
             self.pred_masks = []
             img = img.to(self.device, non_blocking=True)
@@ -243,6 +248,7 @@ class Yolov5Evaluator:
                 predn = pred.clone()
                 shape = shapes[si][0]
 
+                # NOTE
                 # I tested `compute_stat` and `compute_stat_native`,
                 # it shows the same results.
                 # but maybe I didn't do enough experiments,
@@ -375,9 +381,7 @@ class Yolov5Evaluator:
         box_or_mask_any = stats[0].any() or stats[1].any()
         stats = stats[1:] if not self.mask else stats
         if len(stats) and box_or_mask_any:
-            results = self.ap_per_class(
-                *stats, self.plots, self.save_dir, self.names
-            )
+            results = self.ap_per_class(*stats, self.plots, self.save_dir, self.names)
             self.metric.update(results)
             nt = np.bincount(
                 stats[3].astype(np.int64), minlength=self.nc
@@ -432,8 +436,12 @@ class Yolov5Evaluator:
             predn.shape[0], self.iouv.shape[0], dtype=torch.bool, device=self.iouv.device
         )
         process = process_mask_upsample if self.plots else process_mask
+        gt_shape = (
+            gt_masksi.shape[1] * self.mask_downsample_ratio,
+            gt_masksi.shape[2] * self.mask_downsample_ratio,
+        )
         pred_maski = (
-            process(proto_out, predn[:, 6:], predn[:, :4], gt_masksi.shape[1:])
+            process(proto_out, predn[:, 6:], predn[:, :4], shape=gt_shape)
             .permute(2, 0, 1)
             .contiguous()
         )
@@ -500,7 +508,7 @@ class Yolov5Evaluator:
 
             # masks
             correct_masks, pred_maski = self.process_batch_masks(predn, proto_out, masksi, labelsn)
-                
+
             if self.plots:
                 self.confusion_matrix.process_batch(predn, labelsn)
                 # TODO
@@ -558,7 +566,7 @@ class Yolov5Evaluator:
 
             # masks
             correct_masks, pred_maski = self.process_batch_masks(predn, proto_out, masksi, labelsn)
-                
+
             if self.plots:
                 self.confusion_matrix.process_batch(predn, labelsn)
                 # TODO
@@ -602,7 +610,9 @@ class Yolov5Evaluator:
         # plot predition
         if len(self.pred_masks):
             pred_masks = (
-                torch.cat(self.pred_masks, dim=0) if len(self.pred_masks) > 1 else self.pred_masks[0]
+                torch.cat(self.pred_masks, dim=0)
+                if len(self.pred_masks) > 1
+                else self.pred_masks[0]
             )
         else:
             pred_masks = None

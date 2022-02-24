@@ -140,15 +140,20 @@ def exif_transpose(image):
     return image
 
 
-def polygon2mask(img_size, polygons, color=1):
+def polygon2mask(img_size, polygons, color=1, downsample_ratio=1):
     """
     Args:
         img_size (tuple): The image size.
         polygons (np.ndarray): [N, M], N is the number of polygons,
             M is the number of points(Be divided by 2).
     """
+    img_size = (
+            img_size[0] // downsample_ratio, 
+            img_size[1] // downsample_ratio
+            )
     mask = np.zeros(img_size, dtype=np.uint8)
-    polygons = np.asarray(polygons, np.int32)
+    polygons = np.asarray(polygons) / downsample_ratio
+    polygons = polygons.astype(np.int32)
     shape = polygons.shape
     polygons = polygons.reshape(shape[0], -1, 2)
     cv2.fillPoly(mask, polygons, color=color)
@@ -252,6 +257,7 @@ def create_dataloader(
     bg_dir="",
     area_thr=0.2,
     mask_head=False,
+    mask_downsample_ratio=1,
 ):
     if rect and shuffle:
         print(
@@ -278,6 +284,8 @@ def create_dataloader(
             bg_dir=bg_dir,
             area_thr=area_thr,
         )
+        if mask_head:
+            dataset.downsample_ratio = mask_downsample_ratio
 
     batch_size = min(batch_size, len(dataset))
     nw = min(
@@ -1168,6 +1176,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
         neg_dir="",
         bg_dir="",
         area_thr=0.2,
+        downsample_ratio=1,  # return dowmsample mask
     ):
         super().__init__(
             path,
@@ -1186,6 +1195,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             bg_dir,
             area_thr,
         )
+        self.downsample_ratio = downsample_ratio
 
     @Dataset.mosaic_getitem
     def __getitem__(self, index):
@@ -1255,17 +1265,19 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             )
             for si in range(len(segments)):
                 mask = polygon2mask(
-                    # (int(ratio[1] * h), int(ratio[0] * w)),
-                    # (shape, shape) if isinstance(shape, int) else shape,
-                    img.shape[:2],
-                    [segments[si].reshape(-1)],
+                        img.shape[:2],
+                        [segments[si].reshape(-1)],
+                        downsample_ratio=self.downsample_ratio,
                 )
                 masks.append(torch.from_numpy(mask.astype(np.float32)))
 
         masks = (
             torch.stack(masks, axis=0)
             if len(masks)
-            else torch.zeros(nl, self.img_size, self.img_size)
+            else torch.zeros(
+                nl, 
+                self.img_size // self.downsample_ratio, 
+                self.img_size // self.downsample_ratio)
         )
         # TODO: albumentations support
         if self.augment:

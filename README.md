@@ -14,8 +14,9 @@
 - [ ] cuda memory increase when training with `mosaic augment`
 - [ ] smaller gt_masks for saving memory
 - [ ] better way to compute seg loss
-- [ ] test `scale_coords` influence for map
+- [X] test `scale_coords` influence for map
 - [ ] DDP
+- [ ] clean pruning code
 
 
 ## Quick Start
@@ -24,11 +25,11 @@
 <summary>Installation</summary>
 
 Clone repo and install [requirements.txt](https://github.com/Laughing-q/YOLO-Q/blob/master/requirements.txt) in a
-**Python>=3.7.0** environment, including
-**PyTorch>=1.7.1** and **Tensorrt >= 8.2.1.8**.
+**Python>=3.7.0** environment, including**PyTorch>=1.7.1**.
 
 ```shell
-git clone https://github.com/Laughing-q/YOLO-Q.git
+git clone https://github.com/Laughing-q/yolov5-q.git
+cd yolov5-q
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -71,6 +72,6 @@ python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt 
 - Plot mask will occupy a lot of cuda memory, so `plots=False` in `train_seg` by default, so you may need to run `val_seg.py` after running `train_seg.py` for more visualization.
 - `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
 - `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
-- not support `wandb` and `evolve`.
-- looks like `no_mosaic_epoch` will influence the mask training(TODO).
+- not support `wandb` and `evolve`, cause I don't need them.
+- looks like `no_mosaic_epoch` will influence the mask training(TODO, bug).
 - Just put a `--mask` option, then you can train and val instance segmentation.

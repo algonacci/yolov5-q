@@ -10,6 +10,7 @@ from functools import partial
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import yaml
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -49,7 +50,7 @@ from ..utils.torch_utils import (
 )
 from ..utils.metrics import fitness
 from ..utils.newloggers import NewLoggers, NewLoggersMask
-from .evaluator_seg import Yolov5Evaluator
+from .evaluator import Yolov5Evaluator
 
 LOGGER = logging.getLogger(__name__)
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
@@ -75,6 +76,7 @@ class Trainer:
         self.freeze = opt.freeze
         self.no_aug_epochs = opt.no_aug_epochs
         self.mask = opt.mask
+        self.mask_ratio = opt.mask_ratio
 
         self.cuda = device.type != "cpu"
         self.callbacks = callbacks
@@ -91,6 +93,7 @@ class Trainer:
             save_dir=self.save_dir,
             plots=False,
             mask=self.mask,
+            mask_downsample_ratio=self.mask_ratio,
         )
 
         # initialize some base value
@@ -129,7 +132,6 @@ class Trainer:
         # Forward
         with amp.autocast(enabled=self.cuda):
             pred = self.model(imgs)  # forward
-            # TODO: modify
             loss, loss_items = self.compute_loss(
                 pred, targets.to(self.device), masks=masks.to(self.device) if self.mask else masks
             )  # loss scaled by batch_size
@@ -329,7 +331,6 @@ class Trainer:
             #     plots=True,
             # )  # val best model with plots
 
-            # TODO: modify
             if not self.mask:
                 self.evaluator.plots = True
             self.results, _, _ = self.evaluator.run_training(
@@ -346,7 +347,6 @@ class Trainer:
                     self.fi,
                 )
 
-        # TODO: modify
         self.callbacks.run("on_train_end", self.plots, self.epoch, masks=self.mask)
         LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
 
@@ -359,7 +359,6 @@ class Trainer:
         - close augment
         """
         self.epoch = epoch
-        # TODO: modify
         nloss = 4 if self.mask else 3  #  (obj, cls, box, [seg])
         self.mloss = torch.zeros(nloss, device=self.device)  # mean losses
 
@@ -386,12 +385,6 @@ class Trainer:
         if RANK != -1:
             self.train_loader.batch_sampler.sampler.set_epoch(self.epoch)
 
-        self.pbar = enumerate(self.train_loader)
-        if RANK in [-1, 0]:
-            self.pbar = tqdm(self.pbar, total=self.batches)  # progress bar
-        self.optimizer.zero_grad()
-
-        # TODO: modify
         s = (
             ("\n" + "%10s" * 8)
             % ("Epoch", "gpu_mem", "box", "seg", "obj", "cls", "labels", "img_size")
@@ -400,6 +393,12 @@ class Trainer:
             % ("Epoch", "gpu_mem", "box", "obj", "cls", "labels", "img_size")
         )
         LOGGER.info(s)
+
+        self.pbar = enumerate(self.train_loader)
+        if RANK in [-1, 0]:
+            self.pbar = tqdm(self.pbar, total=self.batches)  # progress bar
+        self.optimizer.zero_grad()
+
 
     def after_epoch(self):
         """
@@ -441,7 +440,6 @@ class Trainer:
         mem = (
             f"{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G"  # (GB)
         )
-        # TODO: modify
         self.pbar.set_description(
             ("%10s" * 2 + "%10.4g" * (6 if self.mask else 5))
             % (
@@ -452,6 +450,13 @@ class Trainer:
                 imgs.shape[-1],
             )
         )
+        if self.mask_ratio != 1:
+            masks = F.interpolate(
+                masks[None, :],
+                (self.imgsz, self.imgsz),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(0)
         self.callbacks.run(
             "on_train_batch_end",
             self.iter,
@@ -637,7 +642,6 @@ class Trainer:
         return optimizer, scheduler
 
     def set_logger(self):
-        # TODO: modify
         if RANK not in [-1, 0]:
             return
         newloggers = NewLoggersMask if self.mask else NewLoggers
@@ -664,7 +668,6 @@ class Trainer:
     def _initializtion(self):
         self.start_epoch, self.best_fitness = 0, 0.0
         self.last_opt_step = -1
-        # TODO: modify
         # P(B), R(B), mAP@.5(B), mAP@.5-.95(B),
         # P(M), R(M), mAP@.5(M), mAP@.5-.95(M),
         # val_loss(box, seg, obj, cls)
@@ -719,7 +722,6 @@ class Trainer:
         return imgs
 
     def _initialize_loader(self):
-        # TODO: modify
         # functions
         self.create_dataloader = partial(
             create_dataloader,
@@ -729,17 +731,18 @@ class Trainer:
             hyp=self.hyp,
             workers=self.workers,
             mask_head=self.mask,
+            mask_downsample_ratio=self.mask_ratio,
         )
 
-    def _initialize_eval(self):
-        self.eval = partial(
-            val.run,
-            data=self.data_dict,
-            batch_size=self.batch_size // WORLD_SIZE * 2,
-            imgsz=self.imgsz,
-            single_cls=self.single_cls,
-            save_dir=self.save_dir,
-            dataloader=self.val_loader,
-            callbacks=self.callbacks,
-            compute_loss=self.compute_loss,
-        )
+    # def _initialize_eval(self):
+    #     self.eval = partial(
+    #         val.run,
+    #         data=self.data_dict,
+    #         batch_size=self.batch_size // WORLD_SIZE * 2,
+    #         imgsz=self.imgsz,
+    #         single_cls=self.single_cls,
+    #         save_dir=self.save_dir,
+    #         dataloader=self.val_loader,
+    #         callbacks=self.callbacks,
+    #         compute_loss=self.compute_loss,
+    #     )

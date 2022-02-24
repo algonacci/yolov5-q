@@ -33,9 +33,7 @@ from yolov5.utils.callbacks import Callbacks
 from yolov5.core.trainer import Trainer
 
 LOGGER = logging.getLogger(__name__)
-LOCAL_RANK = int(
-    os.getenv("LOCAL_RANK", -1)
-)  # https://pytorch.org/docs/stable/elastic/run.html
+LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv("RANK", -1))
 WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
@@ -43,22 +41,18 @@ WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--weights", type=str, default="yolov5s.pt", help="initial weights path"
+        "-w", "--weights", type=str, default="yolov5s.pt", help="initial weights path"
     )
-    parser.add_argument("--cfg", type=str, default="", help="model.yaml path")
-    parser.add_argument(
-        "--data", type=str, default="data/coco128.yaml", help="dataset.yaml path"
-    )
+    parser.add_argument("-c", "--cfg", type=str, default="", help="model.yaml path")
+    parser.add_argument("-d", "--data", type=str, default="data/coco128.yaml", help="dataset.yaml path")
     parser.add_argument(
         "--hyp",
         type=str,
         default="data/hyps/hyp.scratch.yaml",
         help="hyperparameters path",
     )
-    parser.add_argument("--epochs", type=int, default=300)
-    parser.add_argument(
-        "--batch-size", type=int, default=16, help="total batch size for all GPUs"
-    )
+    parser.add_argument("-e", "--epochs", type=int, default=300)
+    parser.add_argument("-b", "--batch-size", type=int, default=16, help="total batch size for all GPUs")
     parser.add_argument(
         "--imgsz",
         "--img",
@@ -75,15 +69,9 @@ def parse_opt(known=False):
         default=False,
         help="resume most recent training",
     )
-    parser.add_argument(
-        "--nosave", action="store_true", help="only save final checkpoint"
-    )
-    parser.add_argument(
-        "--noval", action="store_true", help="only validate final epoch"
-    )
-    parser.add_argument(
-        "--noautoanchor", action="store_true", help="disable autoanchor check"
-    )
+    parser.add_argument("--nosave", action="store_true", help="only save final checkpoint")
+    parser.add_argument("--noval", action="store_true", help="only validate final epoch")
+    parser.add_argument("--noautoanchor", action="store_true", help="disable autoanchor check")
     parser.add_argument("--bucket", type=str, default="", help="gsutil bucket")
     parser.add_argument(
         "--cache",
@@ -97,20 +85,14 @@ def parse_opt(known=False):
         action="store_true",
         help="use weighted image selection for training",
     )
-    parser.add_argument(
-        "--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu"
-    )
-    parser.add_argument(
-        "--multi-scale", action="store_true", help="vary img-size +/- 50%%"
-    )
+    parser.add_argument("--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu")
+    parser.add_argument("--multi-scale", action="store_true", help="vary img-size +/- 50%%")
     parser.add_argument(
         "--single-cls",
         action="store_true",
         help="train multi-class data as single-class",
     )
-    parser.add_argument(
-        "--adam", action="store_true", help="use torch.optim.Adam() optimizer"
-    )
+    parser.add_argument("--adam", action="store_true", help="use torch.optim.Adam() optimizer")
     parser.add_argument(
         "--sync-bn",
         action="store_true",
@@ -119,9 +101,7 @@ def parse_opt(known=False):
     parser.add_argument(
         "--workers", type=int, default=8, help="maximum number of dataloader workers"
     )
-    parser.add_argument(
-        "--project", default="runs/train", help="save to project/name"
-    )
+    parser.add_argument("--project", default="runs/train", help="save to project/name")
     parser.add_argument("--name", default="exp", help="save to project/name")
     parser.add_argument(
         "--exist-ok",
@@ -151,9 +131,7 @@ def parse_opt(known=False):
         default=-1,
         help="Save checkpoint every x epochs (disabled if < 1)",
     )
-    parser.add_argument(
-        "--local_rank", type=int, default=-1, help="DDP parameter, do not modify"
-    )
+    parser.add_argument("--local_rank", type=int, default=-1, help="DDP parameter, do not modify")
 
     # Weights & Biases arguments
     parser.add_argument("--entity", default=None, help="W&B: Entity")
@@ -192,8 +170,17 @@ def parse_opt(known=False):
     )
 
     parser.add_argument(
+        "-m",
         "--mask",
         action="store_true",
+        help="Whether to train the instance segmentation",
+    )
+
+    parser.add_argument(
+        "-mr",
+        "--mask-ratio",
+        type=int,
+        default=1,
         help="Whether to train the instance segmentation",
     )
 
@@ -227,25 +214,17 @@ def main(opt, callbacks=Callbacks()):
             str(opt.weights),
             str(opt.project),
         )  # checks
-        assert len(opt.cfg) or len(
-            opt.weights
-        ), "either --cfg or --weights must be specified"
-        opt.save_dir = str(
-            increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok)
-        )
+        assert len(opt.cfg) or len(opt.weights), "either --cfg or --weights must be specified"
+        opt.save_dir = str(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))
 
     # DDP mode
     device = select_device(opt.device, batch_size=opt.batch_size)
     if LOCAL_RANK != -1:
-        assert (
-            torch.cuda.device_count() > LOCAL_RANK
-        ), "insufficient CUDA devices for DDP command"
+        assert torch.cuda.device_count() > LOCAL_RANK, "insufficient CUDA devices for DDP command"
         assert (
             opt.batch_size % WORLD_SIZE == 0
         ), "--batch-size must be multiple of CUDA device count"
-        assert (
-            not opt.image_weights
-        ), "--image-weights argument is not compatible with DDP training"
+        assert not opt.image_weights, "--image-weights argument is not compatible with DDP training"
         torch.cuda.set_device(LOCAL_RANK)
         device = torch.device("cuda", LOCAL_RANK)
         dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "gloo")

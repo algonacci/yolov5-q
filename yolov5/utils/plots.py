@@ -555,8 +555,10 @@ def plot_results_with_masks(file="path/to/results.csv", dir="", best=True):
         try:
             data = pd.read_csv(f)
             index = np.argmax(
-                0.9 * data.values[:, 8] + 0.1 * data.values[:, 7],
-                0.9 * data.values[:, 12] + 0.1 * data.values[:, 11],
+                0.9 * data.values[:, 8]
+                + 0.1 * data.values[:, 7]
+                + 0.9 * data.values[:, 12]
+                + 0.1 * data.values[:, 11],
             )
             s = [x.strip() for x in data.columns]
             x = data.values[:, 0]

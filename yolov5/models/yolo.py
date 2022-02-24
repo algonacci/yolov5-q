@@ -10,6 +10,8 @@ import argparse
 from copy import deepcopy
 from pathlib import Path
 
+FILE = Path(__file__).resolve()
+
 from .common import *
 from .experimental import *
 from ..utils.autoanchor import check_anchor_order
@@ -343,6 +345,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             args.append([ch[x] for x in f])
             if isinstance(args[1], int):  # number of anchors
                 args[1] = [list(range(args[1] * 2))] * len(f)
+            if m is DetectSegment:
+                args[3] = make_divisible(args[3] * gw, 8)
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
