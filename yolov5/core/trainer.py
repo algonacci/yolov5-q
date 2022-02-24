@@ -450,6 +450,8 @@ class Trainer:
                 imgs.shape[-1],
             )
         )
+
+        # for plots
         if self.mask_ratio != 1:
             masks = F.interpolate(
                 masks[None, :],
@@ -457,6 +459,7 @@ class Trainer:
                 mode="bilinear",
                 align_corners=False,
             ).squeeze(0)
+
         self.callbacks.run(
             "on_train_batch_end",
             self.iter,

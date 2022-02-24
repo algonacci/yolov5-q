@@ -44,6 +44,8 @@ from .augmentations import (
     letterbox,
     mixup,
     random_perspective,
+    segment2box,
+    resample_segments,
 )
 from .general import (
     check_dataset,
@@ -188,6 +190,7 @@ def create_dataloader_ori(
     bg_dir="",
     area_thr=0.2,
     mask_head=False,
+    mask_downsample_ratio=1,
 ):
     if rect and shuffle:
         print(
@@ -214,6 +217,8 @@ def create_dataloader_ori(
             bg_dir=bg_dir,
             area_thr=area_thr,
         )
+        if mask_head:
+            dataset.downsample_ratio = mask_downsample_ratio
 
     batch_size = min(batch_size, len(dataset))
     nw = min(
@@ -1229,9 +1234,9 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             labels = self.labels[index].copy()
-            segments = self.segments[
-                index
-            ].copy()  # [array, array, ....], arrat.shape=(num_points, 2), xyxyxyxy
+            # [array, array, ....], arrat.shape=(num_points, 2), xyxyxyxy
+            segments = self.segments[index].copy()
+            # TODO
             if len(segments):
                 for i_s in range(len(segments)):
                     segments[i_s] = xyn2xy(
@@ -1246,10 +1251,22 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
                     labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1]
                 )
 
+            # TODO
+            n = len(segments)
+            new = np.zeros((n, 4))
+            segments = resample_segments(segments)  # upsample
+            w = shape[0] if isinstance(shape, np.ndarray) else shape
+            h = shape[1] if isinstance(shape, np.ndarray) else shape
+            for i, segment in enumerate(segments):
+                # clip
+                new[i] = segment2box(segment, w, h)
+            labels[:, 1:5] = new
+
             if self.augment:
                 img, labels, segments = random_perspective(
                     img,
                     labels,
+                    segments=segments,
                     degrees=hyp["degrees"],
                     translate=hyp["translate"],
                     scale=hyp["scale"],

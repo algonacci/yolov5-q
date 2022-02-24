@@ -4,53 +4,60 @@ import numpy as np
 import torch.nn.functional as F
 from yolov5.utils.general import *
 from yolov5.utils.plots import plot_images_and_masks
-from yolov5.utils.datasets import LoadImagesAndLabelsAndMasks
+from yolov5.utils.datasets import LoadImagesAndLabelsAndMasks, create_dataloader
 import cv2
 from yolov5.utils.general import init_seeds
 
-names = ['balloon']
+names = ["balloon"]
 seed = 2
 init_seeds(seed)
-colors = [[random.randint(0, 255) for _ in range(3)]
-          for _ in range(len(names))]
+colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(names))]
 
-with open('data/hyps/hyp.scratch.yaml') as f:
+with open("data/hyps/hyp.scratch.yaml") as f:
     hyp = yaml.load(f, Loader=yaml.FullLoader)  # load hyps
 
-# dataset = LoadImagesAndLabels('data/play_phone1216/images/train', img_size=640, augment=True, cache_images=False,
-#                               hyp=hyp)
-dataset = LoadImagesAndLabelsAndMasks(
-    # '/d/baidubase/COCO/val_yolo/images/train',
-    # 'data/license_plates/images/train/',
-    # '/d/projects/research/yolov5/data/coco/train2017.txt',
-    # '/d/projects/research/yolov5/data/coco/val2017.txt',
-    '/home/laughing/yolov5/data/seg/balloon/images/train',
-    img_size=640,
-    augment=False,
-    cache_images=False,
-    hyp=hyp,
-)
-dataset.mosaic = True
-
 save = False
-save_dir = '/d/projects/yolov5/data/play_phone0115/show_labels'
+save_dir = "/d/projects/yolov5/data/play_phone0115/show_labels"
 
 if save and not os.path.exists(save_dir):
     os.mkdir(save_dir)
 
-dataloader = torch.utils.data.DataLoader(
-    dataset,
-    batch_size=1,
-    num_workers=0,
-    sampler=None,
-    pin_memory=True,
-    collate_fn=LoadImagesAndLabelsAndMasks.collate_fn)
-cv2.namedWindow('mosaic', cv2.WINDOW_NORMAL)
+dataloader, dataset = create_dataloader(
+            # '/d/baidubase/COCO/val_yolo/images/train',
+            # 'data/license_plates/images/train/',
+            # '/d/projects/research/yolov5/data/coco/train2017.txt',
+            # '/d/projects/research/yolov5/data/coco/val2017.txt',
+            "/home/laughing/yolov5/data/seg/balloon/images/train",
+            imgsz=640,
+            batch_size=1,
+            stride=32,
+            augment=False,
+            shuffle=True,
+            rank=-1,
+            hyp=hyp,
+            mask_head=True
+)
+cv2.namedWindow("mosaic", cv2.WINDOW_NORMAL)
 
+# TODO
 for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
     # for i, (imgs, targets, paths, _) in enumerate(dataset):
     #     print(targets)
     # print(targets)
+    mxywh = targets[:, 2:].cpu()
+    mxyxy = xywh2xyxy(mxywh) * torch.tensor((640, 640))[[0, 1, 0, 1]]
+    maskssss = masks.permute(1, 2, 0).contiguous()
+    print(maskssss.shape)
+    for k in range(maskssss.shape[-1]):
+        c1 = (int(mxyxy[k][0]), int(mxyxy[k][1]))
+        c2 = (int(mxyxy[k][2]), int(mxyxy[k][3]))
+        img = maskssss[:, :, k].cpu().numpy().astype(np.uint8) * 255
+        cv2.rectangle(img, c1, c2, (255, 255, 255), -1, cv2.LINE_AA)  # filled
+        cv2.imshow('p', cv2.resize(img, (640, 640)))
+        if cv2.waitKey(0) == ord('q'):
+            break
+    exit()
+
     if dataset.downsample_ratio != 1:
         masks = F.interpolate(
             masks[None, :],
@@ -58,12 +65,10 @@ for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
             mode="bilinear",
             align_corners=False,
         ).squeeze(0)
-    result = plot_images_and_masks(images=imgs,
-                          targets=targets,
-                          paths=paths,
-                          masks=masks)
-    cv2.imshow('mosaic', result[:, :, ::-1])
-    if cv2.waitKey(0) == ord('q'):  # q to quit
+
+    result = plot_images_and_masks(images=imgs, targets=targets, paths=paths, masks=masks)
+    cv2.imshow("mosaic", result[:, :, ::-1])
+    if cv2.waitKey(0) == ord("q"):  # q to quit
         break
     continue
     # imgs = imgs.numpy().astype(np.uint8).transpose((1, 2, 0))

@@ -296,14 +296,6 @@ class ComputeLoss:
                         )
                     )
                     mxyxy = xywh2xyxy(mxywh)
-                    # print(mxyxy[0])
-                    # temp_mask = crop(mask_gti, mxyxy)
-                    # temp_mask = mask_gti
-                    # import numpy as np
-                    # import cv2
-                    # np.savetxt('8g.txt', temp_mask[:, :, 0].detach().cpu().numpy() * 255)
-                    # cv2.imwrite('8g.png', temp_mask[:, :, 0].detach().cpu().numpy() * 255)
-                    # exit()
                     psi = pi[bm, am, gjm, gim]
                     pred_maski = proto_out[bi] @ psi[:, 5 : self.nm].tanh().T
                     lseg_ = (
