@@ -298,6 +298,8 @@ class ComputeLoss:
                     )
                     mxyxy = xywh2xyxy(mxywh)
                     psi = pi[bm, am, gjm, gim]
+                    # (batch_size, 80, 80, 32) @ (32, n) -> (batch_size, 80, 80, n)
+                    # TODO: (proto_out[b])
                     pred_maski = proto_out[bi] @ psi[:, 5 : self.nm].tanh().T
                     lseg_ = (
                         F.binary_cross_entropy_with_logits(

@@ -91,6 +91,7 @@ class Yolov5Evaluator:
         mask=False,
         mask_downsample_ratio=1,
     ) -> None:
+        # TODO: fix bug
         self.data = check_dataset(data)  # check
         self.conf_thres = conf_thres  # confidence threshold
         self.iou_thres = iou_thres  # NMS IoU threshold
