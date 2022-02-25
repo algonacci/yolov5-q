@@ -19,7 +19,7 @@ from tqdm import tqdm
 FILE = Path(__file__).resolve()
 
 from yolov5.models.experimental import attempt_load
-from yolov5.data.datasets import create_dataloader
+from yolov5.data import create_dataloader
 from yolov5.utils.general import coco80_to_coco91_class, set_logging, increment_path, colorstr, print_args
 from yolov5.utils.boxes import box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy
 from yolov5.utils.checker import (

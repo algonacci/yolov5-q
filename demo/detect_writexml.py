@@ -7,12 +7,14 @@ import torch
 from numpy import random
 
 from yolov5.models.experimental import attempt_load
-from yolov5.utils.datasets import letterbox
-from yolov5.utils.general import (
+from yolov5.data import letterbox
+from yolov5.utils.boxes import (
     check_img_size,
     non_max_suppression,
     scale_coords,
 )
+
+from yolov5.utils.checker import check_img_size
 
 # ROIarea, polygon_ROIarea)
 from yolov5.utils.plots import plot_one_box

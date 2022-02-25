@@ -1,5 +1,5 @@
 from collections import OrderedDict, namedtuple
-from yolov5.utils.augmentations import letterbox
+from yolov5.data import letterbox
 from yolov5.utils.torch_utils import select_device
 import torch
 import numpy as np

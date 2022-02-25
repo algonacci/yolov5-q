@@ -32,10 +32,28 @@ import torch
 import torch.backends.cudnn as cudnn
 
 from yolov5.models.common import DetectMultiBackend
-from yolov5.utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
-from yolov5.utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr,
-                           increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
-from yolov5.utils.plots import Annotator, colors, save_one_box
+from yolov5.data import LoadImages, LoadStreams
+from yolov5.data.data_utils import IMG_FORMATS, VID_FORMATS
+from yolov5.utils.general import (
+    LOGGER, 
+    colorstr,
+    increment_path, 
+    print_args, 
+    strip_optimizer
+)
+from yolov5.utils.checker import (
+    check_file,
+    check_requirements,
+    check_img_size,
+    check_imshow,
+)
+from yolov5.utils.boxes import (
+    scale_coords, 
+    non_max_suppression,
+    xyxy2xywh,
+    save_one_box
+)
+from yolov5.utils.plots import Annotator, colors
 from yolov5.utils.torch_utils import select_device, time_sync
 
 

@@ -35,11 +35,32 @@ ROOT = FILE.parents[1]  # YOLOv5 root directory
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from yolov5.models.common import DetectMultiBackend
-from yolov5.utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams
-from yolov5.utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr,
-                           increment_path, process_mask_upsample, non_max_suppression_masks, print_args, 
-                           scale_coords, scale_masks, strip_optimizer, xyxy2xywh)
-from yolov5.utils.plots import Annotator, colors, save_one_box, plot_masks
+from yolov5.data import LoadImages, LoadStreams
+from yolov5.data.data_utils import IMG_FORMATS, VID_FORMATS
+from yolov5.utils.general import (
+    LOGGER, 
+    colorstr,
+    increment_path, 
+    print_args, 
+    strip_optimizer
+)
+from yolov5.utils.checker import (
+    check_file,
+    check_requirements,
+    check_img_size,
+    check_imshow,
+)
+from yolov5.utils.boxes import (
+    scale_coords, 
+    xyxy2xywh,
+    save_one_box
+)
+from yolov5.utils.segment import (
+    scale_masks, 
+    non_max_suppression_masks,
+    process_mask_upsample
+)
+from yolov5.utils.plots import Annotator, colors, plot_masks
 from yolov5.utils.torch_utils import select_device, time_sync
 
 

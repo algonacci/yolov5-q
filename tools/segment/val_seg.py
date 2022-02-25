@@ -23,23 +23,29 @@ ROOT = FILE.parents[1]  # YOLOv5 root directory
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from yolov5.models.experimental import attempt_load
-from yolov5.utils.datasets import create_dataloader
+from yolov5.data import create_dataloader
 from yolov5.utils.general import (
     coco80_to_coco91_class,
+    set_logging,
+    increment_path,
+    colorstr,
+    print_args,
+)
+from yolov5.utils.checker import (
     check_dataset,
     check_img_size,
     check_requirements,
     check_suffix,
     check_yaml,
+)
+from yolov5.utils.boxes import (
     box_iou,
-    non_max_suppression_masks,
     scale_coords,
     xyxy2xywh,
     xywh2xyxy,
-    set_logging,
-    increment_path,
-    colorstr,
-    print_args,
+)
+from yolov5.utils.boxes import (
+    non_max_suppression_masks,
     process_mask_upsample,
     process_mask,
     mask_iou,

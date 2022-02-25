@@ -1,8 +1,8 @@
 from yolov5.utils.autoanchor import check_anchors
-from yolov5.utils.datasets import LoadImagesAndLabels
+from yolov5.data import LoadImagesAndLabels
 from yolov5.utils.torch_utils import select_device
 from yolov5.models.yolo import Model
-from yolov5.utils.general import check_yaml
+from yolov5.utils.checker import check_yaml
 import argparse
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from tqdm import tqdm
 from ..models.experimental import attempt_load
 from ..models.yolo import Model
 from ..models.loss import ComputeLoss
-from ..data.datasets import create_dataloader
+from ..data import create_dataloader
 from ..utils.autoanchor import check_anchors
 from ..utils.general import (
     labels_to_class_weights,

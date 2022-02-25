@@ -14,19 +14,23 @@ import torch
 from tqdm import tqdm
 
 from ..models.experimental import attempt_load
-from ..data.datasets import create_dataloader
+from ..data import create_dataloader
 from ..utils.general import (
     coco80_to_coco91_class,
+    increment_path,
+    colorstr,
+)
+from ..utils.checker import (
     check_dataset,
     check_img_size,
     check_suffix,
+)
+from ..utils.boxes import (
     box_iou,
     non_max_suppression,
     scale_coords,
     xyxy2xywh,
     xywh2xyxy,
-    increment_path,
-    colorstr,
 )
 from ..utils.metrics import ap_per_class, ConfusionMatrix
 from ..utils.plots import output_to_target, plot_images

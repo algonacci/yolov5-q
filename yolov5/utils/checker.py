@@ -14,12 +14,11 @@ import urllib
 import numpy as np
 import platform
 
-from .general import colorstr, make_divisible, user_config_dir
+from .general import colorstr, make_divisible
 from .downloads import download
 
 FILE = Path(__file__).resolve()
 ROOT = Path('yolov5')
-CONFIG_DIR = user_config_dir()  # Ultralytics settings dir
 
 def try_except(func):
     # try-except function. Usage: @try_except decorator
@@ -30,6 +29,21 @@ def try_except(func):
             print(e)
 
     return handler
+
+def is_writeable(dir, test=False):
+    # Return True if directory has write permissions, test opening a file with write permissions if test=True
+    if test:  # method 1
+        file = Path(dir) / "tmp.txt"
+        try:
+            with open(file, "w"):  # open file with write permissions
+                pass
+            file.unlink()  # remove file
+            return True
+        except IOError:
+            return False
+    else:  # method 2
+        return os.access(dir, os.R_OK)  # possible issues on Windows
+
 
 def user_config_dir(dir="Ultralytics", env_var="YOLOV5_CONFIG_DIR"):
     # Return path of user configuration directory. Prefer environment variable if exists. Make dir if required.
@@ -49,21 +63,7 @@ def user_config_dir(dir="Ultralytics", env_var="YOLOV5_CONFIG_DIR"):
     path.mkdir(exist_ok=True)  # make if required
     return path
 
-
-def is_writeable(dir, test=False):
-    # Return True if directory has write permissions, test opening a file with write permissions if test=True
-    if test:  # method 1
-        file = Path(dir) / "tmp.txt"
-        try:
-            with open(file, "w"):  # open file with write permissions
-                pass
-            file.unlink()  # remove file
-            return True
-        except IOError:
-            return False
-    else:  # method 2
-        return os.access(dir, os.R_OK)  # possible issues on Windows
-
+CONFIG_DIR = user_config_dir()  # Ultralytics settings dir
 
 def is_docker():
     # Is environment a Docker container?

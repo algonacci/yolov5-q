@@ -21,7 +21,8 @@ import yaml
 from PIL import Image
 from torch.cuda import amp
 
-from ..data.datasets import exif_transpose, letterbox
+from ..data.data_utils import exif_transpose
+from ..data.augmentations import letterbox
 from ..utils.general import LOGGER, colorstr, increment_path, make_divisible
 from ..utils.checker import check_requirements, check_suffix, check_version
 from ..utils.boxes import non_max_suppression, scale_coords, xywh2xyxy, xyxy2xywh, save_one_box

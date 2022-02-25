@@ -6,7 +6,7 @@
 - [X] `detect_seg.py`
 - [X] support flip augmentation
 - [X] val
-- [ ] clean `dataset.py`
+- [X] clean `dataset.py`
 - [ ] support albumentations
 - [ ] fix unstable segment loss
 - [ ] Mixup
@@ -26,7 +26,7 @@
 <details open>
 <summary>Installation</summary>
 
-Clone repo and install [requirements.txt](https://github.com/Laughing-q/YOLO-Q/blob/master/requirements.txt) in a
+Clone repo and install [requirements.txt](https://github.com/Laughing-q/yolov5-q/blob/master/requirements.txt) in a
 **Python>=3.7.0** environment, including**PyTorch>=1.7.1**.
 
 ```shell
@@ -76,3 +76,7 @@ python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt 
 - `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
 - not support `wandb` and `evolve`, cause I don't need them.
 - Just put a `--mask` option, then you can train and val instance segmentation.
+
+## Reference
+- [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
+- [https://github.com/Megvii-BaseDetection/YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)

@@ -20,7 +20,7 @@ from tqdm import tqdm
 from ..models.experimental import attempt_load
 from ..models.yolo import Model
 from ..utils.autoanchor import check_anchors
-from ..data.datasets import create_dataloader
+from ..data import create_dataloader
 from ..utils.general import (
     labels_to_class_weights,
     labels_to_image_weights,

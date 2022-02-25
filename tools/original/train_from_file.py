@@ -33,7 +33,7 @@ import val  # for end-of-epoch mAP
 from yolov5.models.experimental import attempt_load
 from yolov5.models.yolo import Model
 from yolov5.utils.autoanchor import check_anchors
-from yolov5.data.datasets import create_dataloader, create_dataloader_ori
+from yolov5.data import create_dataloader, create_dataloader_ori
 from yolov5.utils.general import (
     labels_to_class_weights,
     increment_path,

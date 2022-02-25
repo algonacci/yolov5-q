@@ -16,13 +16,11 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from ..models.experimental import attempt_load
-from ..data.datasets import create_dataloader
+from ..data import create_dataloader
 from ..utils.general import (
     coco80_to_coco91_class,
     increment_path,
     colorstr,
-    process_mask,
-    process_mask_upsample,
 )
 from ..utils.checker import (
     check_dataset,
@@ -84,7 +82,7 @@ class Yolov5Evaluator:
         single_cls=False,
         augment=False,
         verbose=False,
-        project=ROOT / "runs/val",
+        project="runs/val",
         name="exp",
         exist_ok=False,
         half=True,
