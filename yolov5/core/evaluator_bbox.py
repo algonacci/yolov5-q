@@ -6,9 +6,6 @@ Usage:
     $ python path/to/val.py --data coco128.yaml --weights yolov5s.pt --img 640
 """
 
-import argparse
-import json
-import os
 from pathlib import Path
 from threading import Thread
 
@@ -16,12 +13,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
-ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
-
 from ..models.experimental import attempt_load
-from ..utils.datasets import create_dataloader
+from ..data.datasets import create_dataloader
 from ..utils.general import (
     coco80_to_coco91_class,
     check_dataset,
@@ -79,7 +72,7 @@ class Yolov5Evaluator:
         single_cls=False,
         augment=False,
         verbose=False,
-        project=ROOT / "runs/val",
+        project="runs/val",
         name="exp",
         exist_ok=False,
         half=True,

@@ -50,8 +50,8 @@ FILE = Path(__file__).resolve()
 from yolov5.models.common import Conv
 from yolov5.models.experimental import attempt_load
 from yolov5.models.yolo import Detect
-from yolov5.utils.activations import SiLU
-from yolov5.utils.datasets import LoadImages
+from yolov5.models.activations import SiLU
+from yolov5.data.datasets import LoadImages
 from yolov5.utils.general import (LOGGER, check_dataset, check_img_size, check_requirements, colorstr, file_size, print_args,
                            url2file)
 from yolov5.utils.torch_utils import select_device

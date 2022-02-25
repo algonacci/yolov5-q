@@ -21,11 +21,13 @@ import torch
 import torch.nn as nn
 from tensorflow import keras
 
+FILE = Path(__file__).resolve()
+
 from .common import Bottleneck, BottleneckCSP, Concat, Conv, C3, DWConv, Focus, SPP, SPPF, autopad
 from .experimental import CrossConv, MixConv2d, attempt_load
 from .yolo import Detect
 from ..utils.general import make_divisible, print_args, set_logging
-from ..utils.activations import SiLU
+from ..models.activations import SiLU
 
 LOGGER = logging.getLogger(__name__)
 
@@ -415,7 +417,7 @@ def representative_dataset_gen(dataset, ncalib=100):
             break
 
 
-def run(weights=ROOT / 'yolov5s.pt',  # weights path
+def run(weights='yolov5s.pt',  # weights path
         imgsz=(640, 640),  # inference size h,w
         batch_size=1,  # batch size
         dynamic=False,  # dynamic batch size
@@ -439,7 +441,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # weights path
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5s.pt', help='weights path')
+    parser.add_argument('--weights', type=str, default='yolov5s.pt', help='weights path')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
     parser.add_argument('--dynamic', action='store_true', help='dynamic batch size')

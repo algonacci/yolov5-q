@@ -31,7 +31,7 @@ import val  # for end-of-epoch mAP
 from yolov5.models.experimental import attempt_load
 from yolov5.models.yolo import Model
 from yolov5.utils.autoanchor import check_anchors
-from yolov5.utils.datasets import create_dataloader, create_dataloader_ori
+from yolov5.data.datasets import create_dataloader
 from yolov5.utils.general import (
     labels_to_class_weights,
     increment_path,
@@ -39,13 +39,6 @@ from yolov5.utils.general import (
     init_seeds,
     strip_optimizer,
     get_latest_run,
-    check_dataset,
-    check_git_status,
-    check_img_size,
-    check_requirements,
-    check_file,
-    check_yaml,
-    check_suffix,
     print_args,
     print_mutation,
     set_logging,
@@ -53,8 +46,18 @@ from yolov5.utils.general import (
     colorstr,
     methods,
 )
+from yolov5.utils.checker import (
+    check_dataset,
+    check_git_status,
+    check_img_size,
+    check_requirements,
+    check_file,
+    check_yaml,
+    check_suffix,
+)
+
 from yolov5.utils.downloads import attempt_download
-from yolov5.utils.loss import ComputeLoss
+from yolov5.models.loss import ComputeLoss
 from yolov5.utils.plots import plot_labels, plot_evolve
 from yolov5.utils.torch_utils import (
     EarlyStopping,

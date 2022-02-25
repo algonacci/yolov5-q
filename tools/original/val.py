@@ -19,10 +19,16 @@ from tqdm import tqdm
 FILE = Path(__file__).resolve()
 
 from yolov5.models.experimental import attempt_load
-from yolov5.utils.datasets import create_dataloader
-from yolov5.utils.general import coco80_to_coco91_class, check_dataset, check_img_size, check_requirements, \
-    check_suffix, check_yaml, box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, \
-    increment_path, colorstr, print_args
+from yolov5.data.datasets import create_dataloader
+from yolov5.utils.general import coco80_to_coco91_class, set_logging, increment_path, colorstr, print_args
+from yolov5.utils.boxes import box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy
+from yolov5.utils.checker import (
+    check_dataset,
+    check_img_size,
+    check_requirements,
+    check_yaml,
+    check_suffix,
+)
 from yolov5.utils.metrics import ap_per_class, ConfusionMatrix
 from yolov5.utils.plots import output_to_target, plot_images, plot_val_study
 from yolov5.utils.torch_utils import select_device, time_sync

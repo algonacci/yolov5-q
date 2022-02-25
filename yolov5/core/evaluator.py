@@ -7,7 +7,6 @@ Usage:
 """
 
 import json
-import os
 from pathlib import Path
 from threading import Thread
 
@@ -16,28 +15,32 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
-ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
-
 from ..models.experimental import attempt_load
-from ..utils.datasets import create_dataloader
+from ..data.datasets import create_dataloader
 from ..utils.general import (
     coco80_to_coco91_class,
-    check_dataset,
-    check_img_size,
-    check_suffix,
-    box_iou,
-    non_max_suppression,
-    non_max_suppression_masks,
-    scale_coords,
-    xyxy2xywh,
-    xywh2xyxy,
     increment_path,
     colorstr,
     process_mask,
     process_mask_upsample,
-    mask_iou,
+)
+from ..utils.checker import (
+    check_dataset,
+    check_img_size,
+    check_suffix,
+)
+from ..utils.boxes import (
+    box_iou,
+    non_max_suppression,
+    scale_coords,
+    xyxy2xywh,
+    xywh2xyxy,
+)
+from ..utils.segment import (
+    non_max_suppression_masks, 
+    mask_iou, 
+    process_mask,
+    process_mask_upsample,
 )
 from ..utils.metrics import ap_per_class, ap_per_class_box_and_mask, ConfusionMatrix
 from ..utils.plots import output_to_target, plot_images_boxes_and_masks

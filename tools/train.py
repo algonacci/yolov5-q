@@ -21,12 +21,14 @@ FILE = Path(__file__).resolve()
 from yolov5.utils.general import (
     increment_path,
     get_latest_run,
+    print_args,
+    set_logging,
+)
+from yolov5.utils.checker import (
     check_git_status,
     check_requirements,
     check_file,
     check_yaml,
-    print_args,
-    set_logging,
 )
 from yolov5.utils.torch_utils import select_device
 from yolov5.utils.callbacks import Callbacks

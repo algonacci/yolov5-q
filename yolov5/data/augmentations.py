@@ -10,8 +10,10 @@ import random
 import cv2
 import numpy as np
 
-from .general import colorstr, segment2box, resample_segments, check_version
-from .metrics import bbox_ioa
+from ..utils.general import colorstr
+from ..utils.segment import segment2box, resample_segments
+from ..utils.checker import check_version
+from ..utils.metrics import bbox_ioa
 
 
 class Albumentations:

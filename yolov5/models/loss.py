@@ -7,9 +7,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .metrics import bbox_iou
-from .general import xywh2xyxy, crop
-from .torch_utils import is_parallel
+from ..utils.metrics import bbox_iou
+from ..utils.boxes import xywh2xyxy
+from ..utils.segment import crop
+from ..utils.torch_utils import is_parallel
 
 
 def smooth_BCE(

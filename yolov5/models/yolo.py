@@ -15,7 +15,8 @@ FILE = Path(__file__).resolve()
 from .common import *
 from .experimental import *
 from ..utils.autoanchor import check_anchor_order
-from ..utils.general import check_yaml, make_divisible, print_args, set_logging
+from ..utils.general import make_divisible, print_args, set_logging
+from ..utils.checker import check_yaml
 from ..utils.plots import feature_visualization
 from ..utils.torch_utils import copy_attr, fuse_conv_and_bn, initialize_weights, model_info, scale_img, \
     select_device, time_sync

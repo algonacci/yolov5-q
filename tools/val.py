@@ -13,10 +13,12 @@ from yolov5.core.evaluator import Yolov5Evaluator
 FILE = Path(__file__).resolve()
 
 from yolov5.utils.general import (
-    check_yaml,
-    check_requirements,
     set_logging,
     print_args,
+)
+from yolov5.utils.checker import (
+    check_yaml,
+    check_requirements,
 )
 
 def parse_opt():

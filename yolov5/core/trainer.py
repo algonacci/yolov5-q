@@ -17,29 +17,26 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Adam, SGD, lr_scheduler
 from tqdm import tqdm
 
-FILE = Path(__file__).resolve()
-ROOT = FILE.parents[0]  # YOLOv5 root directory
-ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
-
-# import val  # for end-of-epoch mAP
 from ..models.experimental import attempt_load
 from ..models.yolo import Model
 from ..utils.autoanchor import check_anchors
-from ..utils.datasets import create_dataloader
+from ..data.datasets import create_dataloader
 from ..utils.general import (
     labels_to_class_weights,
     labels_to_image_weights,
     init_seeds,
     strip_optimizer,
-    check_dataset,
-    check_img_size,
-    check_suffix,
     one_cycle,
     colorstr,
     methods,
 )
+from ..utils.checker import (
+    check_dataset,
+    check_img_size,
+    check_suffix,
+)
 from ..utils.downloads import attempt_download
-from ..utils.loss import ComputeLoss
+from ..models.loss import ComputeLoss
 from ..utils.plots import plot_labels
 from ..utils.torch_utils import (
     EarlyStopping,
@@ -52,6 +49,7 @@ from ..utils.metrics import fitness
 from ..utils.newloggers import NewLoggers, NewLoggersMask
 from .evaluator import Yolov5Evaluator
 
+# TODO
 LOGGER = logging.getLogger(__name__)
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv("RANK", -1))
@@ -59,6 +57,7 @@ WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 
 
 class Trainer:
+    # TODO: add logger argument
     def __init__(self, hyp, opt, device, callbacks) -> None:
         self.hyp = hyp
         self.opt = opt
@@ -218,10 +217,15 @@ class Trainer:
 
         # DP mode
         if self.cuda and RANK == -1 and torch.cuda.device_count() > 1:
-            raise ValueError(
-                "Please use `DDP`, such as '$ python -m torch.distributed.launch --nproc_per_node 2 "
-                "train.py --batch 64 --data coco.yaml --cfg yolov5s.yaml --weights '' --device 0,1'"
+            # raise ValueError(
+            #     "Please use `DDP`, such as '$ python -m torch.distributed.launch --nproc_per_node 2 "
+            #     "train.py --batch 64 --data coco.yaml --cfg yolov5s.yaml --weights '' --device 0,1'"
+            # )
+            logging.warning(
+                "DP not recommended, instead use torch.distributed.run for best DDP Multi-GPU results.\n"
+                "See Multi-GPU Tutorial at https://github.com/ultralytics/yolov5/issues/475 to get started."
             )
+            self.model = torch.nn.DataParallel(self.model)
 
         # SyncBatchNorm
         if self.opt.sync_bn and self.cuda and RANK != -1:
@@ -398,7 +402,6 @@ class Trainer:
         if RANK in [-1, 0]:
             self.pbar = tqdm(self.pbar, total=self.batches)  # progress bar
         self.optimizer.zero_grad()
-
 
     def after_epoch(self):
         """

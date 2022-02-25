@@ -15,13 +15,14 @@ import numpy as np
 import pandas as pd
 import seaborn as sn
 import torch
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from .general import user_config_dir, is_ascii, is_chinese, xywh2xyxy, xyxy2xywh
+from .checker import is_ascii, is_chinese 
+from .boxes import xywh2xyxy, xyxy2xywh
 from .metrics import fitness
+from .checker import check_font
 
 # Settings
-CONFIG_DIR = user_config_dir()  # Ultralytics settings dir
 RANK = int(os.getenv("RANK", -1))
 matplotlib.rc("font", **{"size": 11})
 matplotlib.use("Agg")  # for writing to files only
@@ -66,19 +67,6 @@ class Colors:
 
 
 colors = Colors()  # create instance for 'from utils.plots import colors'
-
-
-def check_font(font="Arial.ttf", size=10):
-    # Return a PIL TrueType Font, downloading to CONFIG_DIR if necessary
-    font = Path(font)
-    font = font if font.exists() else (CONFIG_DIR / font.name)
-    try:
-        return ImageFont.truetype(str(font) if font.exists() else font.name, size)
-    except Exception as e:  # download if missing
-        url = "https://ultralytics.com/assets/" + font.name
-        print(f"Downloading {url} to {font}...")
-        torch.hub.download_url_to_file(url, str(font), progress=False)
-        return ImageFont.truetype(str(font), size)
 
 
 class Annotator:
@@ -644,26 +632,6 @@ def feature_visualization(x, module_type, stage, n=32, save_dir=Path("runs/detec
             print(f"Saving {save_dir / f}... ({n}/{channels})")
             plt.savefig(save_dir / f, dpi=300, bbox_inches="tight")
             plt.close()
-
-
-def save_one_box(xyxy, im, file="image.jpg", gain=1.02, pad=10, square=False, BGR=False, save=True):
-    # Save image crop as {file} with crop size multiple {gain} and {pad} pixels. Save and/or return crop
-    xyxy = torch.tensor(xyxy).view(-1, 4)
-    b = xyxy2xywh(xyxy)  # boxes
-    if square:
-        b[:, 2:] = b[:, 2:].max(1)[0].unsqueeze(1)  # attempt rectangle to square
-    b[:, 2:] = b[:, 2:] * gain + pad  # box wh * gain + pad
-    xyxy = xywh2xyxy(b).long()
-    clip_coords(xyxy, im.shape)
-    crop = im[
-        int(xyxy[0, 1]) : int(xyxy[0, 3]),
-        int(xyxy[0, 0]) : int(xyxy[0, 2]),
-        :: (1 if BGR else -1),
-    ]
-    if save:
-        file.parent.mkdir(parents=True, exist_ok=True)  # make directory
-        cv2.imwrite(str(increment_path(file).with_suffix(".jpg")), crop)
-    return crop
 
 
 def plot_images_and_masks(
