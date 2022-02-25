@@ -211,6 +211,7 @@ class Trainer:
         self.imgsz = check_img_size(
             self.opt.imgsz, self.stride, floor=self.stride * 2
         )  # verify imgsz is gs-multiple
+        nl = self.model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
 
         # initialize dataloader
         self._initialize_loader()
@@ -287,7 +288,6 @@ class Trainer:
             self.model = DDP(self.model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
 
         # Model parameters
-        nl = self.model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
         self.set_parameters(nc, nl, names)
 
         # warmup epochs
