@@ -49,16 +49,12 @@ from ..utils.metrics import fitness
 from ..utils.newloggers import NewLoggers, NewLoggersMask
 from .evaluator import Yolov5Evaluator
 
-# TODO
-LOGGER = logging.getLogger(__name__)
-LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
-RANK = int(os.getenv("RANK", -1))
-WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
-
 
 class Trainer:
     # TODO: add logger argument
-    def __init__(self, hyp, opt, device, callbacks) -> None:
+    def __init__(
+        self, hyp, opt, device, callbacks, logger, rank, local_rank, world_size
+    ) -> None:
         self.hyp = hyp
         self.opt = opt
         self.save_dir = Path(opt.save_dir)
@@ -77,14 +73,21 @@ class Trainer:
         self.mask = opt.mask
         self.mask_ratio = opt.mask_ratio
 
+        self.logger = logger
         self.cuda = device.type != "cpu"
-        self.callbacks = callbacks
         self.device = device
+
+        # TODO: set this like YOLOX
+        self.rank = rank
+        self.local_rank = local_rank
+        self.world_size = world_size
+
+        self.callbacks = callbacks
 
         self.scaler = amp.GradScaler(enabled=self.cuda)
         self.stopper = EarlyStopping(patience=self.opt.patience)
 
-        with torch_distributed_zero_first(LOCAL_RANK):
+        with torch_distributed_zero_first(self.local_rank):
             self.data_dict = check_dataset(self.data)  # check if None
         self.evaluator = Yolov5Evaluator(
             data=self.data_dict,
@@ -118,7 +121,9 @@ class Trainer:
             self.after_iter(i, imgs, targets, masks, paths, loss_items)
 
     def train_one_iter(self, i, imgs, targets, masks):
-        self.iter = i + self.batches * self.epoch  # number integrated batches (since train start)
+        self.iter = (
+            i + self.batches * self.epoch
+        )  # number integrated batches (since train start)
 
         # Warmup
         if self.iter <= self.warmup_iters:
@@ -132,10 +137,12 @@ class Trainer:
         with amp.autocast(enabled=self.cuda):
             pred = self.model(imgs)  # forward
             loss, loss_items = self.compute_loss(
-                pred, targets.to(self.device), masks=masks.to(self.device) if self.mask else masks
+                pred,
+                targets.to(self.device),
+                masks=masks.to(self.device) if self.mask else masks,
             )  # loss scaled by batch_size
-            if RANK != -1:
-                loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
+            if self.rank != -1:
+                loss *= self.world_size  # gradient averaged between devices in DDP mode
             if self.opt.quad:
                 loss *= 4.0
 
@@ -171,7 +178,10 @@ class Trainer:
         if isinstance(self.hyp, str):
             with open(self.hyp, errors="ignore") as f:
                 hyp = yaml.safe_load(f)  # load hyps dict
-        LOGGER.info(colorstr("hyperparameters: ") + ", ".join(f"{k}={v}" for k, v in hyp.items()))
+        self.logger.info(
+            colorstr("hyperparameters: ")
+            + ", ".join(f"{k}={v}" for k, v in hyp.items())
+        )
 
         # Save run settings
         with open(self.save_dir / "hyp.yaml", "w") as f:
@@ -186,7 +196,7 @@ class Trainer:
         self.set_logger()
 
         # Config
-        init_seeds(1 + RANK)
+        init_seeds(1 + self.rank)
         nc, names = self._parse_data()
         self.maps = np.zeros(nc)  # mAP per class
 
@@ -199,7 +209,7 @@ class Trainer:
         self.optimizer, self.scheduler = self.set_optimizer()
 
         # EMA
-        self.ema = ModelEMA(self.model) if RANK in [-1, 0] else None
+        self.ema = ModelEMA(self.model) if self.rank in [-1, 0] else None
 
         # Resume optimizer, epochs, scheduler, best_fitness
         if pretrained:
@@ -211,13 +221,15 @@ class Trainer:
         self.imgsz = check_img_size(
             self.opt.imgsz, self.stride, floor=self.stride * 2
         )  # verify imgsz is gs-multiple
-        nl = self.model.model[-1].nl  # number of detection layers (used for scaling hyp['obj'])
+        nl = self.model.model[
+            -1
+        ].nl  # number of detection layers (used for scaling hyp['obj'])
 
         # initialize dataloader
         self._initialize_loader()
 
         # DP mode
-        if self.cuda and RANK == -1 and torch.cuda.device_count() > 1:
+        if self.cuda and self.rank == -1 and torch.cuda.device_count() > 1:
             # raise ValueError(
             #     "Please use `DDP`, such as '$ python -m torch.distributed.launch --nproc_per_node 2 "
             #     "train.py --batch 64 --data coco.yaml --cfg yolov5s.yaml --weights '' --device 0,1'"
@@ -229,18 +241,20 @@ class Trainer:
             self.model = torch.nn.DataParallel(self.model)
 
         # SyncBatchNorm
-        if self.opt.sync_bn and self.cuda and RANK != -1:
-            self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model).to(self.device)
-            LOGGER.info("Using SyncBatchNorm()")
+        if self.opt.sync_bn and self.cuda and self.rank != -1:
+            self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model).to(
+                self.device
+            )
+            self.logger.info("Using SyncBatchNorm()")
 
         # Trainloader
         self.train_loader, self.dataset = self.create_dataloader(
             path=self.data_dict["train"],
-            batch_size=self.batch_size // WORLD_SIZE,
+            batch_size=self.batch_size // self.world_size,
             augment=True,
             cache=self.opt.cache,
             rect=self.opt.rect,
-            rank=LOCAL_RANK,
+            rank=self.local_rank,
             image_weights=self.opt.image_weights,
             quad=self.opt.quad,
             prefix=colorstr("train: "),
@@ -257,10 +271,10 @@ class Trainer:
         ), f"Label class {mlc} exceeds nc={nc} in {self.data}. Possible class labels are 0-{nc - 1}"
 
         # Process 0
-        if RANK in [-1, 0]:
+        if self.rank in [-1, 0]:
             self.val_loader = self.create_dataloader(
                 path=self.data_dict["val"],
-                batch_size=self.batch_size // WORLD_SIZE * 2,
+                batch_size=self.batch_size // self.world_size * 2,
                 cache=None if self.noval else self.opt.cache,
                 rect=True,
                 rank=-1,
@@ -284,8 +298,10 @@ class Trainer:
                 self.model.half().float()  # pre-reduce anchor precision
 
         # DDP mode
-        if self.cuda and RANK != -1:
-            self.model = DDP(self.model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
+        if self.cuda and self.rank != -1:
+            self.model = DDP(
+                self.model, device_ids=[self.local_rank], output_device=self.local_rank
+            )
 
         # Model parameters
         self.set_parameters(nc, nl, names)
@@ -305,7 +321,7 @@ class Trainer:
             base_idx = (self.epochs - self.no_aug_epochs) * self.batches
             self.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
 
-        LOGGER.info(
+        self.logger.info(
             f"Image sizes {self.imgsz} train, {self.imgsz} val\n"
             f"Using {self.train_loader.num_workers} dataloader workers\n"
             f"Logging results to {colorstr('bold', self.save_dir)}\n"
@@ -313,9 +329,9 @@ class Trainer:
         )
 
     def after_train(self):
-        if RANK not in [-1, 0]:
+        if self.rank not in [-1, 0]:
             return
-        LOGGER.info(
+        self.logger.info(
             f"\n{self.epoch - self.start_epoch + 1} epochs completed in {(time.time() - self.t0) / 3600:.3f} hours."
         )
         for f in self.last, self.best:
@@ -324,7 +340,7 @@ class Trainer:
             strip_optimizer(f)  # strip optimizers
             if f is not self.best:
                 continue
-            LOGGER.info(f"\nValidating {f}...")
+            self.logger.info(f"\nValidating {f}...")
             # self.results, _, _ = self.eval(
             #     model=attempt_load(f, self.device).half(),
             #     iou_thres=0.65
@@ -352,7 +368,7 @@ class Trainer:
                 )
 
         self.callbacks.run("on_train_end", self.plots, self.epoch, masks=self.mask)
-        LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
+        self.logger.info(f"Results saved to {colorstr('bold', self.save_dir)}")
 
         torch.cuda.empty_cache()
         return self.results
@@ -386,7 +402,7 @@ class Trainer:
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
-        if RANK != -1:
+        if self.rank != -1:
             self.train_loader.batch_sampler.sampler.set_epoch(self.epoch)
 
         s = (
@@ -396,10 +412,10 @@ class Trainer:
             else ("\n" + "%10s" * 7)
             % ("Epoch", "gpu_mem", "box", "obj", "cls", "labels", "img_size")
         )
-        LOGGER.info(s)
+        self.logger.info(s)
 
         self.pbar = enumerate(self.train_loader)
-        if RANK in [-1, 0]:
+        if self.rank in [-1, 0]:
             self.pbar = tqdm(self.pbar, total=self.batches)  # progress bar
         self.optimizer.zero_grad()
 
@@ -412,7 +428,7 @@ class Trainer:
         # Scheduler
         self.scheduler.step()
 
-        if RANK not in [-1, 0]:
+        if self.rank not in [-1, 0]:
             return
         # mAP
         self.ema.update_attr(
@@ -423,7 +439,7 @@ class Trainer:
         fi = self.evaluate_and_save_model()
 
         # Stop Single-GPU
-        if RANK == -1 and self.stopper(epoch=self.epoch, fitness=fi):
+        if self.rank == -1 and self.stopper(epoch=self.epoch, fitness=fi):
             return True
 
     def before_iter(self, imgs):
@@ -437,12 +453,10 @@ class Trainer:
         - logger info
         """
         # Log
-        if RANK not in [-1, 0]:
+        if self.rank not in [-1, 0]:
             return
         self.mloss = (self.mloss * i + loss_items) / (i + 1)  # update mean losses
-        mem = (
-            f"{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G"  # (GB)
-        )
+        mem = f"{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G"  # (GB)
         self.pbar.set_description(
             ("%10s" * 2 + "%10.4g" * (6 if self.mask else 5))
             % (
@@ -497,7 +511,7 @@ class Trainer:
                 self.start_epoch > 0
             ), f"{self.weights} training to {self.epochs} epochs is finished, nothing to resume."
         if self.epochs < self.start_epoch:
-            LOGGER.info(
+            self.logger.info(
                 f"{self.weights} has been trained for {ckpt['epoch']} epochs. Fine-tuning for {self.epochs} more epochs."
             )
             self.epochs += ckpt["epoch"]  # finetune additional epochs
@@ -525,7 +539,9 @@ class Trainer:
         if fi > self.best_fitness:
             self.best_fitness = fi
         log_vals = list(self.mloss) + list(self.results) + lr
-        self.callbacks.run("on_fit_epoch_end", log_vals, self.epoch, self.best_fitness, fi)
+        self.callbacks.run(
+            "on_fit_epoch_end", log_vals, self.epoch, self.best_fitness, fi
+        )
 
         # Save model
         if (not self.nosave) or final_epoch:  # if save
@@ -565,25 +581,35 @@ class Trainer:
     def load_model(self, nc, pretrained):
         ckpt = None
         if pretrained:
-            with torch_distributed_zero_first(LOCAL_RANK):
-                self.weights = attempt_download(self.weights)  # download if not found locally
+            with torch_distributed_zero_first(self.local_rank):
+                # download if not found locally
+                self.weights = attempt_download(self.weights)
             ckpt = torch.load(self.weights, map_location=self.device)  # load checkpoint
             self.model = Model(
-                self.cfg or ckpt["model"].yaml, ch=3, nc=nc, anchors=self.hyp.get("anchors")
+                self.cfg or ckpt["model"].yaml,
+                ch=3,
+                nc=nc,
+                anchors=self.hyp.get("anchors"),
             ).to(
                 self.device
             )  # create
             exclude = (
-                ["anchor"] if (self.cfg or self.hyp.get("anchors")) and not self.resume else []
+                ["anchor"]
+                if (self.cfg or self.hyp.get("anchors")) and not self.resume
+                else []
             )  # exclude keys
             csd = ckpt["model"].float().state_dict()  # checkpoint state_dict as FP32
-            csd = intersect_dicts(csd, self.model.state_dict(), exclude=exclude)  # intersect
+            csd = intersect_dicts(
+                csd, self.model.state_dict(), exclude=exclude
+            )  # intersect
             self.model.load_state_dict(csd, strict=False)  # load
-            LOGGER.info(
+            self.logger.info(
                 f"Transferred {len(csd)}/{len(self.model.state_dict())} items from {self.weights}"
             )  # report
         else:
-            self.model = Model(self.cfg, ch=3, nc=nc, anchors=self.hyp.get("anchors")).to(
+            self.model = Model(
+                self.cfg, ch=3, nc=nc, anchors=self.hyp.get("anchors")
+            ).to(
                 self.device
             )  # create
 
@@ -607,7 +633,7 @@ class Trainer:
         self.hyp["weight_decay"] *= (
             self.batch_size * self.accumulate / self.nbs
         )  # scale weight_decay
-        LOGGER.info(f"Scaled weight_decay = {self.hyp['weight_decay']}")
+        self.logger.info(f"Scaled weight_decay = {self.hyp['weight_decay']}")
 
         g0, g1, g2 = [], [], []  # optimizer parameter groups
         for v in self.model.modules():
@@ -615,7 +641,9 @@ class Trainer:
                 g2.append(v.bias)
             if isinstance(v, nn.BatchNorm2d):  # weight (no decay)
                 g0.append(v.weight)
-            elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):  # weight (with decay)
+            elif hasattr(v, "weight") and isinstance(
+                v.weight, nn.Parameter
+            ):  # weight (with decay)
                 g1.append(v.weight)
 
         if self.opt.adam:
@@ -623,13 +651,15 @@ class Trainer:
                 g0, lr=self.hyp["lr0"], betas=(self.hyp["momentum"], 0.999)
             )  # adjust beta1 to momentum
         else:
-            optimizer = SGD(g0, lr=self.hyp["lr0"], momentum=self.hyp["momentum"], nesterov=True)
+            optimizer = SGD(
+                g0, lr=self.hyp["lr0"], momentum=self.hyp["momentum"], nesterov=True
+            )
 
         optimizer.add_param_group(
             {"params": g1, "weight_decay": self.hyp["weight_decay"]}
         )  # add g1 with weight_decay
         optimizer.add_param_group({"params": g2})  # add g2 (biases)
-        LOGGER.info(
+        self.logger.info(
             f"{colorstr('optimizer:')} {type(optimizer).__name__} with parameter groups "
             f"{len(g0)} weight, {len(g1)} weight (no decay), {len(g2)} bias"
         )
@@ -638,7 +668,8 @@ class Trainer:
         # Scheduler
         if self.opt.linear_lr:
             self.lf = (
-                lambda x: (1 - x / (self.epochs - 1)) * (1.0 - self.hyp["lrf"]) + self.hyp["lrf"]
+                lambda x: (1 - x / (self.epochs - 1)) * (1.0 - self.hyp["lrf"])
+                + self.hyp["lrf"]
             )  # linear
         else:
             self.lf = one_cycle(1, self.hyp["lrf"], self.epochs)  # cosine 1->hyp['lrf']
@@ -648,11 +679,11 @@ class Trainer:
         return optimizer, scheduler
 
     def set_logger(self):
-        if RANK not in [-1, 0]:
+        if self.rank not in [-1, 0]:
             return
         newloggers = NewLoggersMask if self.mask else NewLoggers
         loggers = newloggers(
-            save_dir=self.save_dir, opt=self.opt, logger=LOGGER
+            save_dir=self.save_dir, opt=self.opt, logger=self.logger
         )  # loggers instance
 
         # Register actions
@@ -662,7 +693,9 @@ class Trainer:
     def set_parameters(self, nc, nl, names):
         self.hyp["box"] *= 3.0 / nl  # scale to layers
         self.hyp["cls"] *= nc / 80.0 * 3.0 / nl  # scale to classes and layers
-        self.hyp["obj"] *= (self.imgsz / 640) ** 2 * 3.0 / nl  # scale to image size and layers
+        self.hyp["obj"] *= (
+            (self.imgsz / 640) ** 2 * 3.0 / nl
+        )  # scale to image size and layers
         self.hyp["label_smoothing"] = self.opt.label_smoothing
         self.model.nc = nc  # attach number of classes to model
         self.model.hyp = self.hyp  # attach hyperparameters to model
@@ -677,7 +710,9 @@ class Trainer:
         # P(B), R(B), mAP@.5(B), mAP@.5-.95(B),
         # P(M), R(M), mAP@.5(M), mAP@.5-.95(M),
         # val_loss(box, seg, obj, cls)
-        self.results = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) if self.mask else (0, 0, 0, 0, 0, 0, 0)
+        self.results = (
+            (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) if self.mask else (0, 0, 0, 0, 0, 0, 0)
+        )
         self.plot_idx = [0, 1, 2]
         self.plots = True  # create plots
         self.t0 = time.time()
@@ -697,7 +732,9 @@ class Trainer:
 
     def _warmup(self):
         xi = [0, self.warmup_iters]  # x interp
-        self.accumulate = max(1, np.interp(self.iter, xi, [1, self.nbs / self.batch_size]).round())
+        self.accumulate = max(
+            1, np.interp(self.iter, xi, [1, self.nbs / self.batch_size]).round()
+        )
         for j, x in enumerate(self.optimizer.param_groups):
             # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
             x["lr"] = np.interp(
@@ -724,7 +761,9 @@ class Trainer:
             ns = [
                 math.ceil(x * sf / self.stride) * self.stride for x in imgs.shape[2:]
             ]  # new shape (stretched to gs-multiple)
-            imgs = nn.functional.interpolate(imgs, size=ns, mode="bilinear", align_corners=False)
+            imgs = nn.functional.interpolate(
+                imgs, size=ns, mode="bilinear", align_corners=False
+            )
         return imgs
 
     def _initialize_loader(self):
@@ -744,7 +783,7 @@ class Trainer:
     #     self.eval = partial(
     #         val.run,
     #         data=self.data_dict,
-    #         batch_size=self.batch_size // WORLD_SIZE * 2,
+    #         batch_size=self.batch_size // self.world_size * 2,
     #         imgsz=self.imgsz,
     #         single_cls=self.single_cls,
     #         save_dir=self.save_dir,
