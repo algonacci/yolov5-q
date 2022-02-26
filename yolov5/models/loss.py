@@ -6,6 +6,8 @@ Loss functions
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from functools import partial
+from multiprocessing.pool import Pool, ThreadPool
 
 from ..utils.metrics import bbox_iou
 from ..utils.boxes import xywh2xyxy
@@ -19,6 +21,33 @@ def smooth_BCE(
     # return positive, negative label smoothing BCE targets
     return 1.0 - 0.5 * eps, 0.5 * eps
 
+def multi_apply(func, *args, **kwargs):
+    """Apply function to a list of arguments.
+
+    Note:
+        This function applies the ``func`` to multiple inputs and
+        map the multiple outputs of the ``func`` into different
+        list. Each list contains the same type of outputs corresponding
+        to different inputs.
+
+    Args:
+        func (Function): A function that will be applied to a list of
+            arguments
+
+    Returns:
+        tuple(list): A tuple containing multiple list, each list contains \
+            a kind of returned results by the function
+    """
+    pfunc = partial(func, **kwargs) if kwargs else func
+    map_results = map(pfunc, *args)
+    return tuple(map_results)
+    # return tuple(map(list, zip(*map_results)))
+
+def mul(proto, pred):
+    return proto @ pred
+
+def mul_p(arg):
+    return arg[0] @ arg[1]
 
 class BCEBlurWithLogitsLoss(nn.Module):
     # BCEwithLogitLoss() with reduced missing label effects.
@@ -137,6 +166,8 @@ class ComputeLoss:
         for k in "na", "nc", "nl", "anchors", "nm":
             if hasattr(det, k):
                 setattr(self, k, getattr(det, k))
+
+        self.pool = ThreadPool()
 
     def __call__(self, p, targets, masks=None):  # predictions, targets, model
         if masks is not None:
@@ -278,42 +309,70 @@ class ComputeLoss:
                     align_corners=False,
                 ).squeeze(0)
 
-                # TODO
-                for bi in b.unique():
-                    index = b == bi
-                    total_pos += index.sum()
-                    bm, am, gjm, gim = b[index], a[index], gj[index], gi[index]
-                    mask_gti = downsampled_masks[index]
-                    mask_gti = mask_gti.permute(1, 2, 0).contiguous()
-                    mxywh = xywh[i][index]
-                    mw, mh = mxywh[:, 2:].T
-                    mw, mh = mw / pi.shape[3], mh / pi.shape[2]
-                    # print(mxywh.shape)
-                    mxywh = (
-                        mxywh
-                        / torch.tensor(pi.shape, device=mxywh.device)[[3, 2, 3, 2]]
-                        * torch.tensor(
-                            [mask_w, mask_h, mask_w, mask_h], device=mxywh.device
-                        )
+                # another way
+                mask_gti = downsampled_masks
+                mask_gti = mask_gti.permute(1, 2, 0).contiguous()
+                mxywh = xywh[i]
+                mw, mh = mxywh[:, 2:].T
+                mw, mh = mw / pi.shape[3], mh / pi.shape[2]
+                # print(mxywh.shape)
+                mxywh = (
+                    mxywh
+                    / torch.tensor(pi.shape, device=mxywh.device)[[3, 2, 3, 2]]
+                    * torch.tensor(
+                        [mask_w, mask_h, mask_w, mask_h], device=mxywh.device
                     )
-                    mxyxy = xywh2xyxy(mxywh)
-                    psi = pi[bm, am, gjm, gim]
-                    # (batch_size, 80, 80, 32) @ (32, n) -> (batch_size, 80, 80, n)
-                    # TODO: (proto_out[b])
-                    pred_maski = proto_out[bi] @ psi[:, 5 : self.nm].tanh().T
-                    lseg_ = (
-                        F.binary_cross_entropy_with_logits(
-                            pred_maski, mask_gti, reduction="none"
-                        )
-                        * 6.125
+                )
+                mxyxy = xywh2xyxy(mxywh)
+                proto_out = proto_out[b]
+                # pred_maski = multi_apply(mul, proto_out, ps[:, 5 : self.nm].tanh())
+                pred_maski = self.pool.map(mul_p, zip(proto_out, ps[:, 5 : self.nm].tanh()))
+                pred_maski = torch.stack(pred_maski, dim=0).permute(1, 2, 0).contiguous()
+                lseg_ = (
+                    F.binary_cross_entropy_with_logits(
+                        pred_maski, mask_gti, reduction="none"
                     )
+                    * 6.125
+                )
 
-                    lseg_ = crop(lseg_, mxyxy)
-                    lseg_ = lseg_.mean(dim=(0, 1)) / mw / mh
-                    lseg += torch.sum(lseg_)
-                # Append targets to text file
-                # with open('targets.txt', 'a') as file:
-                #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
+                lseg_ = crop(lseg_, mxyxy)
+                lseg_ = lseg_.mean(dim=(0, 1)) / mw / mh
+                lseg += torch.sum(lseg_)
+                total_pos += len(b)
+
+                # TODO
+                # for bi in b.unique():
+                #     index = b == bi
+                #     total_pos += index.sum()
+                #     bm, am, gjm, gim = b[index], a[index], gj[index], gi[index]
+                #     mask_gti = downsampled_masks[index]
+                #     mask_gti = mask_gti.permute(1, 2, 0).contiguous()
+                #     mxywh = xywh[i][index]
+                #     mw, mh = mxywh[:, 2:].T
+                #     mw, mh = mw / pi.shape[3], mh / pi.shape[2]
+                #     # print(mxywh.shape)
+                #     mxywh = (
+                #         mxywh
+                #         / torch.tensor(pi.shape, device=mxywh.device)[[3, 2, 3, 2]]
+                #         * torch.tensor(
+                #             [mask_w, mask_h, mask_w, mask_h], device=mxywh.device
+                #         )
+                #     )
+                #     mxyxy = xywh2xyxy(mxywh)
+                #     psi = pi[bm, am, gjm, gim]
+                #     # (batch_size, 80, 80, 32) @ (32, n) -> (batch_size, 80, 80, n)
+                #     # TODO: (proto_out[b])
+                #     pred_maski = proto_out[bi] @ psi[:, 5 : self.nm].tanh().T
+                #     lseg_ = (
+                #         F.binary_cross_entropy_with_logits(
+                #             pred_maski, mask_gti, reduction="none"
+                #         )
+                #         * 6.125
+                #     )
+                #
+                #     lseg_ = crop(lseg_, mxyxy)
+                #     lseg_ = lseg_.mean(dim=(0, 1)) / mw / mh
+                #     lseg += torch.sum(lseg_)
 
             obji = self.BCEobj(pi[..., 4], tobj)
             lobj += obji * self.balance[i]  # obj loss
