@@ -33,6 +33,7 @@ from .data_utils import (
     HELP_URL,
     NUM_THREADS,
     polygon2mask,
+    polygon2mask_downsample,
     get_hash,
     img2label_paths,
     verify_image_label,
@@ -767,7 +768,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
                 labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1e-3
             )
             for si in range(len(segments)):
-                mask = polygon2mask(
+                mask = polygon2mask_downsample(
                     img.shape[:2],
                     [segments[si].reshape(-1)],
                     downsample_ratio=self.downsample_ratio,

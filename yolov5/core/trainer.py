@@ -95,6 +95,7 @@ class Trainer:
             save_dir=self.save_dir,
             plots=False,
             mask=self.mask,
+            verbose=False,
             mask_downsample_ratio=self.mask_ratio,
         )
 

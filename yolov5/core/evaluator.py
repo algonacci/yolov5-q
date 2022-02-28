@@ -161,6 +161,7 @@ class Yolov5Evaluator:
 
     def run_training(self, model, dataloader, compute_loss=None):
         """This is for evaluation when training."""
+        self.seen = 0
         self.device = next(model.parameters()).device  # get model device
         # self.iouv.to(self.device)
         self.total_loss = torch.zeros((4 if self.mask else 3), device=self.device)
@@ -225,6 +226,7 @@ class Yolov5Evaluator:
     ):
         """This is for native evaluation."""
         model, dataloader, imgsz = self.before_infer(weights, batch_size, imgsz, save_txt, task)
+        self.seen = 0
         # self.iouv.to(self.device)
         self.half &= self.device.type != "cpu"  # half precision only supported on CUDA
         model.half() if self.half else model.float()
@@ -387,7 +389,7 @@ class Yolov5Evaluator:
             results = self.ap_per_class(*stats, self.plots, self.save_dir, self.names)
             self.metric.update(results)
             nt = np.bincount(
-                stats[3].astype(np.int64), minlength=self.nc
+                stats[(3 if not self.mask else 4)].astype(np.int64), minlength=self.nc
             )  # number of targets per class
         else:
             nt = torch.zeros(1)
@@ -596,6 +598,7 @@ class Yolov5Evaluator:
         print(pf % ("all", self.seen, nt.sum(), *self.metric.mean_results()))
 
         # Print results per class
+        # TODO: self.seen support verbose.
         if self.verbose and self.nc > 1 and len(stats):
             for i, c in enumerate(self.metric.ap_class_index):
                 print(pf % (self.names[c], self.seen, nt[c], *self.metric.class_result(i)))
@@ -741,3 +744,8 @@ class Metrics:
 
     def get_maps(self, nc):
         return self.metric_box.get_maps(nc) + self.metric_mask.get_maps(nc)
+
+    @property
+    def ap_class_index(self):
+        # boxes and masks have the same ap_class_index
+        return self.metric_box.ap_class_index
