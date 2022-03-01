@@ -104,7 +104,8 @@ def set_logging(rank=-1, verbose=True):
 
 def print_args(name, opt):
     # Print argparser arguments
-    print(colorstr(f"{name}: ") + ", ".join(f"{k}={v}" for k, v in vars(opt).items()))
+    opt = opt if isinstance(opt, dict) else vars(opt)
+    print(colorstr(f"{name}: ") + ", ".join(f"{k}={v}" for k, v in opt.items()))
 
 
 def init_seeds(seed=0):
