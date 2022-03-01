@@ -96,9 +96,11 @@ class DetectSegment(Detect):
             # nn.Conv2d(self.proto_c, self.proto_c, kernel_size=3, stride=1, padding=1),
             # nn.SiLU(inplace=True),
             # nn.Conv2d(self.proto_c, self.proto_c, kernel_size=3, stride=1, padding=1),
-            # nn.SiLU(inplace=True), nn.Upsample(scale_factor=2, mode='nearest'),
-            # nn.Conv2d(self.proto_c, self.proto_c, kernel_size=3, stride=1, padding=1),
-            # nn.SiLU(inplace=True),
+            # nn.SiLU(inplace=True), 
+            # nn.Upsample(scale_factor=2, mode='nearest'),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(self.proto_c, self.proto_c, kernel_size=3, stride=1, padding=1),
+            nn.SiLU(inplace=True),
             nn.Conv2d(self.proto_c, self.mask_dim, kernel_size=1, padding=0),
             nn.SiLU(inplace=True))
 

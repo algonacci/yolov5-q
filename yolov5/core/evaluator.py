@@ -35,8 +35,8 @@ from ..utils.boxes import (
     xywh2xyxy,
 )
 from ..utils.segment import (
-    non_max_suppression_masks, 
-    mask_iou, 
+    non_max_suppression_masks,
+    mask_iou,
     process_mask,
     process_mask_upsample,
 )
@@ -87,6 +87,7 @@ class Yolov5Evaluator:
         exist_ok=False,
         half=True,
         save_dir=Path(""),
+        nosave=False,
         plots=True,
         mask=False,
         mask_downsample_ratio=1,
@@ -104,6 +105,7 @@ class Yolov5Evaluator:
         self.exist_ok = exist_ok  # existing project/name ok, do not increment
         self.half = half  # use FP16 half-precision inference
         self.save_dir = save_dir
+        self.nosave = nosave
         self.plots = plots
         self.mask = mask
         self.mask_downsample_ratio = mask_downsample_ratio
@@ -262,14 +264,14 @@ class Yolov5Evaluator:
                 # self.compute_stat_native(si, img, predn, targets, masks, train_out, shape, ratio_pad)
 
                 # Save/log
-                if save_txt:
+                if save_txt and self.save_dir.exists():
                     save_one_txt(
                         pred,
                         save_conf,
                         shape,
                         file=self.save_dir / "labels" / (path.stem + ".txt"),
                     )
-                if save_json:
+                if save_json and self.save_dir.exists():
                     save_one_json(
                         pred, self.jdict, path, self.class_map
                     )  # append to COCO-JSON dictionary
@@ -288,10 +290,10 @@ class Yolov5Evaluator:
 
         s = (
             f"\n{len(list(self.save_dir.glob('labels/*.txt')))} labels saved to {self.save_dir / 'labels'}"
-            if save_txt
+            if save_txt and self.save_dir.exists()
             else ""
         )
-        print(f"Results saved to {colorstr('bold', self.save_dir)}{s}")
+        print(f"Results saved to {colorstr('bold', self.save_dir if self.save_dir.exists() else None)}{s}")
 
         # Return results
         return (
@@ -311,9 +313,10 @@ class Yolov5Evaluator:
         self.save_dir = increment_path(
             Path(self.project) / self.name, exist_ok=self.exist_ok
         )  # increment run
-        (self.save_dir / "labels" if save_txt else self.save_dir).mkdir(
-            parents=True, exist_ok=True
-        )  # make dir
+        if not self.nosave:
+            (self.save_dir / "labels" if save_txt else self.save_dir).mkdir(
+                parents=True, exist_ok=True
+            )  # make dir
 
         # Load model
         check_suffix(weights, ".pt")
@@ -338,7 +341,7 @@ class Yolov5Evaluator:
             rect=True,
             prefix=colorstr(f"{task}: "),
             mask_head=self.mask,
-            mask_downsample_ratio=self.mask_downsample_ratio
+            mask_downsample_ratio=self.mask_downsample_ratio,
         )[0]
         return model, dataloader, imgsz
 
@@ -378,7 +381,7 @@ class Yolov5Evaluator:
             t(tuple): speeds of per image.
         """
         # Plot confusion matrix
-        if self.plots:
+        if self.plots and self.save_dir.exists():
             self.confusion_matrix.plot(save_dir=self.save_dir, names=list(self.names.values()))
 
         # Compute statistics
@@ -386,7 +389,9 @@ class Yolov5Evaluator:
         box_or_mask_any = stats[0].any() or stats[1].any()
         stats = stats[1:] if not self.mask else stats
         if len(stats) and box_or_mask_any:
-            results = self.ap_per_class(*stats, self.plots, self.save_dir, self.names)
+            results = self.ap_per_class(
+                *stats, self.plots, self.save_dir if self.save_dir.exists() else None, self.names
+            )
             self.metric.update(results)
             nt = np.bincount(
                 stats[(3 if not self.mask else 4)].astype(np.int64), minlength=self.nc
@@ -604,7 +609,7 @@ class Yolov5Evaluator:
                 print(pf % (self.names[c], self.seen, nt[c], *self.metric.class_result(i)))
 
     def plot_images(self, i, img, targets, masks, out, paths):
-        if (not self.plots) or i >= 3:
+        if (not self.plots) or i >= 3 or (not self.save_dir.exists()):
             return
         # plot ground truth
         f = self.save_dir / f"val_batch{i}_labels.jpg"  # labels

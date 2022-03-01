@@ -84,7 +84,7 @@ def ap_per_class(
         v for k, v in names.items() if k in unique_classes
     ]  # list: only classes that have data
     names = {i: v for i, v in enumerate(names)}  # to dict
-    if plot:
+    if plot and save_dir is not None:
         plot_pr_curve(px, py, ap, Path(save_dir) / f"{prefix}PR_curve.png", names)
         plot_mc_curve(
             px, f1, Path(save_dir) / f"{prefix}F1_curve.png", names, ylabel="F1"

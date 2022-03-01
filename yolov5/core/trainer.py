@@ -172,7 +172,6 @@ class Trainer:
         - loss, cause `ComputeLoss` need some attr in model.
         """
         w = self.save_dir / "weights"  # weights dir
-        w.mkdir(parents=True, exist_ok=True)  # make dir
         self.last, self.best = w / "last.pt", w / "best.pt"
 
         # Hyperparameters
@@ -185,10 +184,12 @@ class Trainer:
         )
 
         # Save run settings
-        with open(self.save_dir / "hyp.yaml", "w") as f:
-            yaml.safe_dump(hyp, f, sort_keys=False)
-        with open(self.save_dir / "opt.yaml", "w") as f:
-            yaml.safe_dump(vars(self.opt), f, sort_keys=False)
+        if not self.nosave:
+            w.mkdir(parents=True, exist_ok=True)  # make dir
+            with open(self.save_dir / "hyp.yaml", "w") as f:
+                yaml.safe_dump(hyp, f, sort_keys=False)
+            with open(self.save_dir / "opt.yaml", "w") as f:
+                yaml.safe_dump(vars(self.opt), f, sort_keys=False)
 
         # Update self.hyp
         self.hyp = hyp
@@ -285,7 +286,7 @@ class Trainer:
 
             if not self.resume:
                 labels = np.concatenate(self.dataset.labels, 0)
-                if self.plots:
+                if (not self.nosave) and self.plots:
                     plot_labels(labels, names, self.save_dir)
 
                 # Anchors
@@ -325,7 +326,7 @@ class Trainer:
         self.logger.info(
             f"Image sizes {self.imgsz} train, {self.imgsz} val\n"
             f"Using {self.train_loader.num_workers} dataloader workers\n"
-            f"Logging results to {colorstr('bold', self.save_dir)}\n"
+            f"Logging results to {colorstr('bold', None if self.nosave else self.save_dir)}\n"
             f"Starting training for {self.epochs} epochs..."
         )
 
@@ -369,7 +370,7 @@ class Trainer:
                 )
 
         self.callbacks.run("on_train_end", self.plots, self.epoch, masks=self.mask)
-        self.logger.info(f"Results saved to {colorstr('bold', self.save_dir)}")
+        self.logger.info(f"Results saved to {colorstr('bold', None if self.nosave else self.save_dir)}")
 
         torch.cuda.empty_cache()
         return self.results

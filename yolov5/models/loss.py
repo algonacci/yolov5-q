@@ -11,15 +11,9 @@ from multiprocessing.pool import Pool, ThreadPool
 
 from ..utils.metrics import bbox_iou
 from ..utils.boxes import xywh2xyxy
-from ..utils.segment import crop
+from ..utils.segment import crop, masks_iou
 from ..utils.torch_utils import is_parallel
 
-
-def smooth_BCE(
-    eps=0.1,
-):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
-    # return positive, negative label smoothing BCE targets
-    return 1.0 - 0.5 * eps, 0.5 * eps
 
 def multi_apply(func, *args, **kwargs):
     """Apply function to a list of arguments.
@@ -40,22 +34,44 @@ def multi_apply(func, *args, **kwargs):
     """
     pfunc = partial(func, **kwargs) if kwargs else func
     map_results = map(pfunc, *args)
-    return tuple(map_results)
     # return tuple(map(list, zip(*map_results)))
+    return tuple(map_results)
 
-def mul(proto, pred):
-    return proto @ pred
 
-def mul_p(arg):
-    return arg[0] @ arg[1]
+def smooth_BCE(
+    eps=0.1,
+):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
+    # return positive, negative label smoothing BCE targets
+    return 1.0 - 0.5 * eps, 0.5 * eps
+
+
+class MaskIOULoss(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, pred_mask, gt_mask, mxyxy=None):
+        """
+        Args:
+            pred_mask (torch.Tensor): prediction of masks, (80/160, 80/160, n)
+            gt_mask (torch.Tensor): ground truth of masks, (80/160, 80/160, n)
+            mxyxy (torch.Tensor): ground truth of boxes, (n, 4)
+        """
+        _, _, n = pred_mask.shape  # same as gt_mask
+        pred_mask = pred_mask.sigmoid()
+        if mxyxy is not None:
+            pred_mask = crop(pred_mask, mxyxy)
+            gt_mask = crop(gt_mask, mxyxy)
+        pred_mask = pred_mask.permute(2, 0, 1).view(n, -1)
+        gt_mask = gt_mask.permute(2, 0, 1).view(n, -1)
+        iou = masks_iou(pred_mask, gt_mask)
+        return 1.0 - iou
+
 
 class BCEBlurWithLogitsLoss(nn.Module):
     # BCEwithLogitLoss() with reduced missing label effects.
     def __init__(self, alpha=0.05):
         super(BCEBlurWithLogitsLoss, self).__init__()
-        self.loss_fcn = nn.BCEWithLogitsLoss(
-            reduction="none"
-        )  # must be nn.BCEWithLogitsLoss()
+        self.loss_fcn = nn.BCEWithLogitsLoss(reduction="none")  # must be nn.BCEWithLogitsLoss()
         self.alpha = alpha
 
     def forward(self, pred, true):
@@ -132,12 +148,10 @@ class ComputeLoss:
         h = model.hyp  # hyperparameters
 
         # Define criteria
-        BCEcls = nn.BCEWithLogitsLoss(
-            pos_weight=torch.tensor([h["cls_pw"]], device=device)
-        )
-        BCEobj = nn.BCEWithLogitsLoss(
-            pos_weight=torch.tensor([h["obj_pw"]], device=device)
-        )
+        BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h["cls_pw"]], device=device))
+        BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h["obj_pw"]], device=device))
+
+        self.mask_loss = MaskIOULoss()
 
         # Class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
         self.cp, self.cn = smooth_BCE(
@@ -149,12 +163,8 @@ class ComputeLoss:
         if g > 0:
             BCEcls, BCEobj = FocalLoss(BCEcls, g), FocalLoss(BCEobj, g)
 
-        det = (
-            model.module.model[-1] if is_parallel(model) else model.model[-1]
-        )  # Detect() module
-        self.balance = {3: [4.0, 1.0, 0.4]}.get(
-            det.nl, [4.0, 1.0, 0.25, 0.06, 0.02]
-        )  # P3-P7
+        det = model.module.model[-1] if is_parallel(model) else model.model[-1]  # Detect() module
+        self.balance = {3: [4.0, 1.0, 0.4]}.get(det.nl, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
         self.ssi = list(det.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = (
             BCEcls,
@@ -225,9 +235,7 @@ class ComputeLoss:
             obji = self.BCEobj(pi[..., 4], tobj)
             lobj += obji * self.balance[i]  # obj loss
             if self.autobalance:
-                self.balance[i] = (
-                    self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
-                )
+                self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
 
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
@@ -261,7 +269,6 @@ class ComputeLoss:
         )  # targets
 
         # Losses
-        total_pos = 0
         for i, pi in enumerate(p):  # layer index, layer predictions
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
@@ -294,11 +301,11 @@ class ComputeLoss:
 
                 # Classification
                 if self.nc > 1:  # cls loss (only if multiple classes)
-                    t = torch.full_like(ps[:, self.nm:], self.cn, device=device)  # targets
+                    t = torch.full_like(ps[:, self.nm :], self.cn, device=device)  # targets
                     t[range(n), tcls[i]] = self.cp
-                    lcls += self.BCEcls(ps[:, self.nm:], t)  # BCE
+                    lcls += self.BCEcls(ps[:, self.nm :], t)  # BCE
 
-                # mask proto
+                # Mask Regression
                 mask_gt = masks[tidxs[i]]
                 downsampled_masks = F.interpolate(
                     mask_gt[None, :],
@@ -307,87 +314,58 @@ class ComputeLoss:
                     align_corners=False,
                 ).squeeze(0)
 
-                # # another way
-                # mask_gti = downsampled_masks
-                # mask_gti = mask_gti.permute(1, 2, 0).contiguous()
-                # mxywh = xywh[i]
-                # mw, mh = mxywh[:, 2:].T
-                # mw, mh = mw / pi.shape[3], mh / pi.shape[2]
-                # # print(mxywh.shape)
-                # mxywh = (
-                #     mxywh
-                #     / torch.tensor(pi.shape, device=mxywh.device)[[3, 2, 3, 2]]
-                #     * torch.tensor(
-                #         [mask_w, mask_h, mask_w, mask_h], device=mxywh.device
-                #     )
-                # )
-                # mxyxy = xywh2xyxy(mxywh)
-                # proto_out = proto_out[b]
-                # pred_maski = multi_apply(mul, proto_out, ps[:, 5 : self.nm].tanh())
-                # pred_maski = torch.stack(pred_maski, dim=0).permute(1, 2, 0).contiguous()
-                # lseg_ = (
-                #     F.binary_cross_entropy_with_logits(
-                #         pred_maski, mask_gti, reduction="none"
-                #     )
-                #     * 6.125
-                # )
-                #
-                # lseg_ = crop(lseg_, mxyxy)
-                # lseg_ = lseg_.mean(dim=(0, 1)) / mw / mh
-                # lseg += torch.sum(lseg_)
-                # total_pos += len(b)
+                mxywh = xywh[i]
+                mws, mhs = mxywh[:, 2:].T
+                mws, mhs = mws / pi.shape[3], mhs / pi.shape[2]
+                mxywhs = (
+                    mxywh
+                    / torch.tensor(pi.shape, device=mxywh.device)[[3, 2, 3, 2]]
+                    * torch.tensor([mask_w, mask_h, mask_w, mask_h], device=mxywh.device)
+                )
+                mxyxys = xywh2xyxy(mxywhs)
 
-                # TODO
+                batch_lseg = torch.zeros(1, device=device)
                 for bi in b.unique():
                     index = b == bi
-                    total_pos += index.sum()
-                    bm, am, gjm, gim = b[index], a[index], gj[index], gi[index]
                     mask_gti = downsampled_masks[index]
                     mask_gti = mask_gti.permute(1, 2, 0).contiguous()
-                    mxywh = xywh[i][index]
-                    mw, mh = mxywh[:, 2:].T
-                    mw, mh = mw / pi.shape[3], mh / pi.shape[2]
-                    # print(mxywh.shape)
-                    mxywh = (
-                        mxywh
-                        / torch.tensor(pi.shape, device=mxywh.device)[[3, 2, 3, 2]]
-                        * torch.tensor(
-                            [mask_w, mask_h, mask_w, mask_h], device=mxywh.device
-                        )
-                    )
-                    mxyxy = xywh2xyxy(mxywh)
-                    psi = pi[bm, am, gjm, gim]
-                    # (1, 80, 80, 32) @ (32, n) -> (1, 80, 80, n)
-                    pred_maski = proto_out[bi] @ psi[:, 5 : self.nm].tanh().T
-                    lseg_ = (
-                        F.binary_cross_entropy_with_logits(
-                            pred_maski, mask_gti, reduction="none"
-                        )
-                        * 6.125
-                    )
 
-                    lseg_ = crop(lseg_, mxyxy)
-                    lseg_ = lseg_.mean(dim=(0, 1)) / mw / mh
-                    lseg += torch.sum(lseg_)
+                    mw, mh = mws[index], mhs[index]
+                    mxyxy = mxyxys[index]
+                    psi = ps[index][:, 5 : self.nm]
+                    proto = proto_out[bi]
+
+                    batch_lseg += self.single_mask_loss(mask_gti, psi, proto, mxyxy, mw, mh)
+                lseg += batch_lseg / len(b.unique())
 
             obji = self.BCEobj(pi[..., 4], tobj)
             lobj += obji * self.balance[i]  # obj loss
             if self.autobalance:
-                self.balance[i] = (
-                    self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
-                )
+                self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
 
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
         lbox *= self.hyp["box"]
         lobj *= self.hyp["obj"]
         lcls *= self.hyp["cls"]
-        lseg *= self.hyp["box"] / 2
-        lseg /= total_pos
+        lseg *= self.hyp["box"]
         bs = tobj.shape[0]  # batch size
 
         loss = lbox + lobj + lcls + lseg
         return loss * bs, torch.cat((lbox, lseg, lobj, lcls)).detach()
+
+    def single_mask_loss(self, gt_mask, pred, proto, xyxy, w, h):
+        """mask loss of single pic."""
+        # (80, 80, 32) @ (32, n) -> (80, 80, n)
+        pred_mask = proto @ pred.tanh().T
+        lseg = F.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction="none")
+        lseg = crop(lseg, xyxy)
+        lseg = lseg.mean(dim=(0, 1)) / w / h
+        return lseg.mean()
+
+    def mask_loss(self, gt_masks, preds, protos, xyxys, ws, hs):
+        """mask loss of batches."""
+        pass
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
@@ -397,9 +375,7 @@ class ComputeLoss:
         ai = (
             torch.arange(na, device=targets.device).float().view(na, 1).repeat(1, nt)
         )  # same as .repeat_interleave(nt)
-        targets = torch.cat(
-            (targets.repeat(na, 1, 1), ai[:, :, None]), 2
-        )  # append anchor indices
+        targets = torch.cat((targets.repeat(na, 1, 1), ai[:, :, None]), 2)  # append anchor indices
 
         g = 0.5  # bias
         off = (
@@ -473,7 +449,7 @@ class ComputeLoss:
         )  # same as .repeat_interleave(nt)
 
         targets = torch.cat(
-                (targets.repeat(na, 1, 1), ai[:, :, None], ti[:, :, None]), 2
+            (targets.repeat(na, 1, 1), ai[:, :, None], ti[:, :, None]), 2
         )  # append anchor indices
 
         g = 0.5  # bias

@@ -64,7 +64,7 @@ class NewLoggers:
 
         # TensorBoard
         s = self.save_dir
-        if "tb" in self.include:
+        if "tb" in self.include and s.exists():
             prefix = colorstr("TensorBoard: ")
             self.logger.info(
                 f"{prefix}Start with 'tensorboard --logdir {s.parent}', view at http://localhost:6006/"
@@ -78,7 +78,7 @@ class NewLoggers:
         self, ni, model, imgs, targets, masks, paths, plots, sync_bn, plot_idx
     ):
         # Callback runs on train batch end
-        if plots:
+        if plots and self.save_dir.exists():
             if ni == 0:
                 if (
                     not sync_bn
@@ -115,7 +115,7 @@ class NewLoggers:
     def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
         # Callback runs at the end of each fit (train+val) epoch
         x = {k: v for k, v in zip(self.keys, vals)}  # dict
-        if self.csv:
+        if self.csv and self.save_dir.exists():
             file = self.save_dir / "results.csv"
             n = len(x) + 1  # number of cols
             s = (
@@ -137,7 +137,7 @@ class NewLoggers:
     def on_train_end(self, plots, epoch, masks=False):
         plts = plot_results_with_masks if masks else plot_results
         # Callback runs on training end
-        if plots:
+        if plots and self.save_dir.exists():
             plts(file=self.save_dir / "results.csv")  # save results.png
         files = [
             "results.png",
@@ -204,7 +204,7 @@ class NewLoggersMask(NewLoggers):
         self, ni, model, imgs, targets, masks, paths, plots, sync_bn, plot_idx
     ):
         # Callback runs on train batch end
-        if plots:
+        if plots and self.save_dir.exists():
             if ni == 0:
                 if (
                     not sync_bn
@@ -229,7 +229,7 @@ class NewLoggersMask(NewLoggers):
     def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
         # Callback runs at the end of each fit (train+val) epoch
         x = {k: v for k, v in zip(self.keys, vals)}  # dict
-        if self.csv:
+        if self.csv and self.save_dir.exists():
             file = self.save_dir / "results.csv"
             n = len(x) + 1  # number of cols
             s = (

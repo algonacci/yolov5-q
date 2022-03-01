@@ -78,7 +78,7 @@ def parse_opt(known=False):
         help="resume most recent training",
     )
     parser.add_argument(
-        "--nosave", action="store_true", help="only save final checkpoint"
+        "--nosave", action="store_true", help="do not save anything"
     )
     parser.add_argument(
         "--noval", action="store_true", help="only validate final epoch"

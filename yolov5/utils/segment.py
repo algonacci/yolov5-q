@@ -289,18 +289,31 @@ def mask_iou(mask1, mask2):
     mask1: [N, n] m1 means number of predicted objects 
     mask2: [M, n] m2 means number of gt objects
     Note: n means image_w x image_h
-    Note: if iscrowd is True, then mask2 should be the crowd.
 
     return: masks iou, [N, M]
     """
     # print(mask1.shape)
     # print(mask2.shape)
-    intersection = torch.matmul(mask1, mask2.t())
+    intersection = torch.matmul(mask1, mask2.t()).clamp(0)
     area1 = torch.sum(mask1, dim=1).view(1, -1)
     area2 = torch.sum(mask2, dim=1).view(1, -1)
     union = (area1.t() + area2) - intersection
 
-    return intersection / union
+    return intersection / (union + 1e-7)
+
+def masks_iou(mask1, mask2):
+    """
+    mask1: [N, n] m1 means number of predicted objects 
+    mask2: [N, n] m2 means number of gt objects
+    Note: n means image_w x image_h
+
+    return: masks iou, (N, )
+    """
+    intersection = (mask1 * mask2).sum(1).clamp(0)  # (N, )
+    area1 = torch.sum(mask1, dim=1).view(1, -1)
+    area2 = torch.sum(mask2, dim=1).view(1, -1)
+    union = (area1 + area2) - intersection
+    return intersection / (union + 1e-7)
 
 def scale_masks(img1_shape, masks, img0_shape, ratio_pad=None):
     """
