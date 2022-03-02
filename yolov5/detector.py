@@ -42,7 +42,7 @@ class Yolov5:
         return img, img0
 
     @torch.no_grad()
-    def dynamic_detect(self, image, img0s, areas=None, classes=None, conf_threshold=0.6, iou_threshold=0.4):
+    def dynamic_detect(self, image, img0s, classes=None, conf_threshold=0.6, iou_threshold=0.4):
         output = {}
         if classes is not None:
             for c in classes:
@@ -51,13 +51,11 @@ class Yolov5:
             for n in self.names:
                 output[n] = 0
         img = torch.from_numpy(image).to(self.device)
-        # print('xxxxxxxxxxxxxx:', time.time() - ttx)
         img = img.half() if self.half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        # 没有batch_size的话则在最前面添加一个轴
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
-        # print(img.shape)
+
         torch.cuda.synchronize()
         pred = self.model(img)[0] 
         pred = non_max_suppression(
@@ -65,25 +63,22 @@ class Yolov5:
 
         torch.cuda.synchronize()
         for i, det in enumerate(pred):  # detections per image
-            if det is not None and len(det):
-                # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_coords(
-                    img.shape[2:], det[:, :4], img0s[i].shape).round()
-                # if areas is not None and len(areas[i]):
-                #     _, warn = polygon_ROIarea(
-                #         det[:, :4], areas[i], img0s[i])
-                #     det = det[warn]
-                #     pred[i] = det
-                for di, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
-                    output[self.names[int(cls)]] += 1
-                    # label = '%s %.2f' % (self.names[int(cls)], conf)
-                    # label = '%s' % (self.names[int(cls)])
-                    label = None
-                    color = [0, 0, 255] if conf < 0.6 else self.colors[int(cls)]
-                    if self.show:
-                        plot_one_box(xyxy, img0s[i], label=label,
-                                     color=color, 
-                                     line_thickness=2)
+            if det is None or len(det) == 0:
+                continue
+            # Rescale boxes from img_size to im0 size
+            det[:, :4] = scale_coords(
+                img.shape[2:], det[:, :4], img0s[i].shape).round()
+
+            for _, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
+                output[self.names[int(cls)]] += 1
+                # label = '%s %.2f' % (self.names[int(cls)], conf)
+                # label = '%s' % (self.names[int(cls)])
+                label = None
+                color = [0, 0, 255] if conf < 0.6 else self.colors[int(cls)]
+                if self.show:
+                    plot_one_box(xyxy, img0s[i], label=label,
+                                 color=color, 
+                                 line_thickness=2)
 
         if self.show:
             for i in range(len(img0s)):

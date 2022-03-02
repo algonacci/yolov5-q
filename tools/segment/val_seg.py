@@ -44,7 +44,7 @@ from yolov5.utils.boxes import (
     xyxy2xywh,
     xywh2xyxy,
 )
-from yolov5.utils.boxes import (
+from yolov5.utils.segment import (
     non_max_suppression_masks,
     process_mask_upsample,
     process_mask,

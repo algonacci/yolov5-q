@@ -11,7 +11,8 @@ import pkg_resources as pkg
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from yolov5.utils.general import colorstr, emojis
+from yolov5.utils.general import colorstr
+from yolov5.utils.checker import emojis
 from yolov5.utils.loggers.wandb.wandb_utils import WandbLogger
 from yolov5.utils.plots import (
     plot_images,

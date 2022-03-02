@@ -118,7 +118,7 @@ class DetectSegment(Detect):
                 if self.grid[i].shape[2:4] != x[i].shape[2:4] or self.onnx_dynamic:
                     self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
 
-                y = x[i]
+                y = x[i].clone()
                 y[..., 0:5] = y[..., 0:5].sigmoid()
                 y[..., self.nm:] = y[..., self.nm:].sigmoid()
                 if self.inplace:
