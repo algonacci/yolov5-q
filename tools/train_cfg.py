@@ -30,6 +30,7 @@ from yolov5.utils.checker import (
     check_requirements,
     check_file,
     check_yaml,
+    check_dict,
 )
 from yolov5.utils.torch_utils import select_device
 from yolov5.utils.callbacks import Callbacks
@@ -119,17 +120,25 @@ def run(**kwargs):
 
 
 if __name__ == "__main__":
-    file, unparsed = parse_opt()
-    opt = OmegaConf.load(file)
-    # opt = OmegaConf.to_yaml(opt)
-    # print(unparsed)
-    assert len(unparsed) % 2 == 0
-    for i in range(0, len(unparsed), 2):
-        k = unparsed[i][2:]
-        v = unparsed[i + 1]
-        try:
-            v = eval(v)
-        except:
-            pass
-        OmegaConf.update(opt, k, v)
+    """
+    `file` option is needed.
+    then use other option to replace the original opt file.
+    Usage:
+        python tools/train_cfg.py file=opt.yaml weights=yolov5s.pt
+    then you just training with opt.yaml and the weights will be replaced by `yolov5s.pt`.
+    """
+    conf = OmegaConf.from_cli()
+    file = conf.get('file', None)
+    if file is not None and Path(file).exists():
+        config = OmegaConf.load(file)
+        conf.pop('file')
+    else:
+        raise ValueError("Please check your `file` option.")
+
+    unexpected = check_dict(config, conf)
+    if len(unexpected) == 0:  # all keys are correct
+        opt = OmegaConf.merge(config, conf)
+    else:
+        raise ValueError(f"Get unexpected args {unexpected}")
+
     main(opt)

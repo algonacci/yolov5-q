@@ -40,7 +40,6 @@ dataloader, dataset = create_dataloader(
 )
 cv2.namedWindow("mosaic", cv2.WINDOW_NORMAL)
 
-# TODO
 for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
     # for i, (imgs, targets, paths, _) in enumerate(dataset):
     #     print(targets)

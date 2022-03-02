@@ -11,12 +11,12 @@
 - [X] smaller gt_masks for saving memory(support train.py only)
 - [X] test `scale_coords` influence for map
 - [X] nosave
-- [ ] `train_cfg.py`
+- [X] `train_cfg.py`
 - [ ] support albumentations
 - [ ] Mixup
 - [ ] DetectSegment head support `gd`
 - [ ] better way to compute seg loss
-- [ ] DDP
+- [ ] coco datasets
 - [ ] coco eval
 - [ ] clean pruning code
 

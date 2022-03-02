@@ -11,6 +11,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
+from omegaconf import OmegaConf
 
 import torch
 import torch.distributed as dist
@@ -279,4 +280,5 @@ def run(**kwargs):
 
 if __name__ == "__main__":
     opt = parse_opt()
+    opt = OmegaConf.create(vars(opt))  # to omegaconf
     main(opt)

@@ -380,3 +380,11 @@ def check_font(font="Arial.ttf", size=10):
         torch.hub.download_url_to_file(url, str(font), progress=False)
         return ImageFont.truetype(str(font), size)
 
+def check_dict(dict1, dict2):
+    """This func will check the keys of dict2 in dict1 or not."""
+    unexpected = []
+    keys = list(dict1.keys())
+    for k, _ in dict2.items():
+        if k not in keys:
+            unexpected.append(k)
+    return unexpected

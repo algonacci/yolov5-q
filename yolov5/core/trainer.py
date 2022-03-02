@@ -12,7 +12,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import yaml
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Adam, SGD, lr_scheduler
@@ -86,10 +85,8 @@ class Trainer:
         self.scaler = amp.GradScaler(enabled=self.cuda)
         self.stopper = EarlyStopping(patience=self.opt.patience)
 
-        with torch_distributed_zero_first(self.local_rank):
-            self.data_dict = check_dataset(self.data)  # check if None
         self.evaluator = Yolov5Evaluator(
-            data=self.data_dict,
+            data=self.data,
             single_cls=self.single_cls,
             save_dir=self.save_dir,
             plots=False,
@@ -97,6 +94,8 @@ class Trainer:
             verbose=False,
             mask_downsample_ratio=self.mask_ratio,
         )
+        with torch_distributed_zero_first(self.local_rank):
+            self.data_dict = check_dataset(self.data)  # check if None
 
         # initialize some base value
         self._initializtion()
@@ -174,7 +173,7 @@ class Trainer:
         # Hyperparameters
         if isinstance(self.hyp, str):
             with open(self.hyp, errors="ignore") as f:
-                hyp = yaml.safe_load(f)  # load hyps dict
+                hyp = OmegaConf.load(f)  # load hyps dict
         self.logger.info(
             colorstr("hyperparameters: ") + ", ".join(f"{k}={v}" for k, v in hyp.items())
         )
@@ -183,12 +182,9 @@ class Trainer:
         if not self.nosave:
             w.mkdir(parents=True, exist_ok=True)  # make dir
             with open(self.save_dir / "hyp.yaml", "w") as f:
-                yaml.safe_dump(hyp, f, sort_keys=False)
+                OmegaConf.save(hyp, f)
             with open(self.save_dir / "opt.yaml", "w") as f:
-                yaml.safe_dump(
-                    self.opt if isinstance(self.opt, dict) else vars(self.opt), f, sort_keys=False
-                )
-                # OmegaConf.save(self.opt, f)
+                OmegaConf.save(self.opt, f)
 
         # Update self.hyp
         self.hyp = hyp
