@@ -73,12 +73,12 @@ python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt 
 
 
 ## Tips
-- Plot mask will occupy a lot of cuda memory, so `plots=False` in `train_seg` by default, so you may need to run `val_seg.py` after running `train_seg.py` for more visualization.
+- Plot mask will occupy a lot of cuda memory, so `plots=False` when training by default, so you may need to run `tools/val.py` after training for more visualization.
 - `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
 - `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
-- not support `wandb` and `evolve`, cause I don't need them.
 - Just put a `--mask` option and `--cfg` option, then you can train instance segmentation.
 - Just put a `--mask` option, then you can val instance segmentation.
+- not support `wandb` and `evolve`, cause I don't need them.
 
 ## Reference
 - [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
