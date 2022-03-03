@@ -19,6 +19,7 @@
 - [ ] coco datasets
 - [ ] coco eval
 - [ ] clean pruning code
+- [ ] more powerful `mask head`
 
 
 ## Quick Start
@@ -30,8 +31,7 @@ Clone repo and install [requirements.txt](https://github.com/Laughing-q/yolov5-q
 **Python>=3.7.0** environment, including**PyTorch>=1.7.1**.
 
 ```shell
-git clone https://github.com/Laughing-q/YOLO-Q.git
-cd YOLO-Q && pip install -e .
+pip install git+https://github.com/Laughing-q/YOLO-Q.git
 git clone https://github.com/Laughing-q/yolov5-q.git
 cd yolov5-q
 pip install -r requirements.txt
