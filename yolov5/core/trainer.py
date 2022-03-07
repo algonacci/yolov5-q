@@ -597,12 +597,12 @@ class Trainer:
             self.logger.info(
                 f"Transferred {len(csd)}/{len(self.model.state_dict())} items from {self.weights}"
             )  # report
+            del csd
         else:
             self.model = Model(self.cfg, ch=3, nc=nc, anchors=self.hyp.get("anchors")).to(
                 self.device
             )  # create
 
-        del csd
 
         # Freeze
         freeze = [f"model.{x}." for x in range(self.freeze)]  # layers to freeze
