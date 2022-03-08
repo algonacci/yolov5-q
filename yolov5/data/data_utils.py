@@ -410,9 +410,10 @@ def verify_image_label(args):
                 assert (
                     l[:, 1:] <= 1
                 ).all(), f"non-normalized or out of bounds coordinates {l[:, 1:][l[:, 1:] > 1]}"
-                l = np.unique(l, axis=0)  # remove duplicate rows
+                l, idx = np.unique(l, axis=0, return_index=True)  # remove duplicate rows
+                # NOTE: `np.unique` will change the order of `l`, so adjust the segments order too.
+                segments = [segments[i] for i in idx]
                 if len(l) < nl:
-                    segments = np.unique(segments, axis=0)
                     msg = f"{prefix}WARNING: {im_file}: {nl - len(l)} duplicate labels removed"
             else:
                 ne = 1  # label empty

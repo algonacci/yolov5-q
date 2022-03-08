@@ -466,7 +466,6 @@ class LoadImagesAndLabels(Dataset):
         )  # number missing, found, empty, corrupt, messages
         desc = f"{prefix}Scanning '{path.parent / path.stem}' images and labels..."
 
-        # NOTE: Pool stuff will make labels and segments get different order.
         with Pool(NUM_THREADS) as pool:
             pbar = tqdm(
                 pool.imap(
@@ -738,16 +737,6 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
                 labels[:, 1:] = xywhn2xyxy(
                     labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1]
                 )
-
-            # TODO
-            n = len(segments)
-            new = np.zeros((n, 4))
-            segments = resample_segments(segments)  # upsample
-            h, w = img.shape[:2]
-            for i, segment in enumerate(segments):
-                # clip
-                new[i] = segment2box(segment, w, h)
-            labels[:, 1:5] = new
 
             if self.augment:
                 img, labels, segments = random_perspective(

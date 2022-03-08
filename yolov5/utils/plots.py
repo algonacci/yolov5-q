@@ -259,6 +259,7 @@ def plot_images(
                     label = f"{cls}" if labels else f"{cls} {conf[j]:.1f}"
                     annotator.box_label(box, label, color=color)
     annotator.im.save(fname)  # save
+    return annotator.result()
 
 
 def plot_lr_scheduler(optimizer, scheduler, epochs=300, save_dir=""):
@@ -769,9 +770,9 @@ def plot_images_boxes_and_masks(
     max_subplots=16,
 ):
     if masks is not None:
-        plot_images_and_masks(images, targets, masks, paths, fname, names, max_size, max_subplots)
+        return plot_images_and_masks(images, targets, masks, paths, fname, names, max_size, max_subplots)
     else:
-        plot_images(images, targets, paths, fname, names, max_size, max_subplots)
+        return plot_images(images, targets, paths, fname, names, max_size, max_subplots)
 
 
 def plot_masks(img, masks, colors, alpha=0.5):

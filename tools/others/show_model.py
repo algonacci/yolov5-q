@@ -2,7 +2,8 @@ from yolov5.models.yolo import Model
 import argparse
 from pathlib import Path
 import torch
-from yolov5.utils.general import print_args, check_yaml
+from yolov5.utils.general import print_args
+from yolov5.utils.checker import check_yaml
 from yolov5.utils.torch_utils import select_device
 
 FILE = Path(__file__).resolve()

@@ -4,7 +4,7 @@ import numpy as np
 import torch.nn.functional as F
 from yolov5.utils.general import *
 from yolov5.utils.boxes import xywh2xyxy
-from yolov5.utils.plots import plot_images_and_masks
+from yolov5.utils.plots import plot_images_boxes_and_masks
 from yolov5.data import LoadImagesAndLabelsAndMasks, create_dataloader
 import cv2
 from yolov5.utils.general import init_seeds
@@ -27,8 +27,8 @@ dataloader, dataset = create_dataloader(
             # '/d/baidubase/COCO/val_yolo/images/train',
             # 'data/license_plates/images/train/',
             # '/d/projects/research/yolov5/data/coco/train2017.txt',
-            # '/d/projects/research/yolov5/data/coco/val2017.txt',
-            "/home/laughing/code/yolov5-6/data/seg/balloon/images/train",
+            '/d/projects/research/yolov5/data/coco/val2017.txt',
+            # "/home/laughing/code/yolov5-6/data/seg/coco_02/images/train",
             imgsz=640,
             batch_size=4,
             stride=32,
@@ -41,23 +41,24 @@ dataloader, dataset = create_dataloader(
 cv2.namedWindow("mosaic", cv2.WINDOW_NORMAL)
 
 for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
-    # for i, (imgs, targets, paths, _) in enumerate(dataset):
     #     print(targets)
     # print(targets)
-    mxywh = targets[:, 2:].cpu()
-    mxyxy = xywh2xyxy(mxywh) * torch.tensor((640, 640))[[0, 1, 0, 1]]
-    maskssss = masks.permute(1, 2, 0).contiguous()
-    for k in range(maskssss.shape[-1]):
-        c1 = (int(mxyxy[k][0]), int(mxyxy[k][1]))
-        c2 = (int(mxyxy[k][2]), int(mxyxy[k][3]))
-        img = maskssss[:, :, k].cpu().numpy().astype(np.uint8) * 255
-        cv2.rectangle(img, c1, c2, (255, 255, 255), -1, cv2.LINE_AA)  # filled
-        cv2.imshow('p', cv2.resize(img, (640, 640)))
-        if cv2.waitKey(0) == ord('q'):
-            break
-    exit()
 
-    if dataset.downsample_ratio != 1:
+    # show masks
+    # mxywh = targets[:, 2:].cpu()
+    # mxyxy = xywh2xyxy(mxywh) * torch.tensor((640, 640))[[0, 1, 0, 1]]
+    # maskssss = masks.permute(1, 2, 0).contiguous()
+    # for k in range(maskssss.shape[-1]):
+    #     c1 = (int(mxyxy[k][0]), int(mxyxy[k][1]))
+    #     c2 = (int(mxyxy[k][2]), int(mxyxy[k][3]))
+    #     img = maskssss[:, :, k].cpu().numpy().astype(np.uint8) * 255
+    #     cv2.rectangle(img, c1, c2, (255, 255, 255), -1, cv2.LINE_AA)  # filled
+    #     cv2.imshow('p', cv2.resize(img, (640, 640)))
+    #     if cv2.waitKey(0) == ord('q'):
+    #         break
+    # exit()
+
+    if getattr(dataset, 'downsample_ratio', 1) != 1 and masks is not None:
         masks = F.interpolate(
             masks[None, :],
             (640, 640),
@@ -65,7 +66,7 @@ for i, (imgs, targets, paths, _, masks) in enumerate(dataloader):
             align_corners=False,
         ).squeeze(0)
 
-    result = plot_images_and_masks(images=imgs, targets=targets, paths=paths, masks=masks)
+    result = plot_images_boxes_and_masks(images=imgs, targets=targets, paths=paths, masks=masks)
     cv2.imshow("mosaic", result[:, :, ::-1])
     if cv2.waitKey(0) == ord("q"):  # q to quit
         break
