@@ -1,5 +1,5 @@
 ## README
-- This repo is plan for instance segmentation based on yolov5.
+- This repo is plan for instance segmentation based on yolov5 and yolact.
 - The weights in releases support detection only, it's just suit this repo.
 - This repo is experimental, it's semi-finished for now.
 - I wrote some scripts to export `yolov5` through `tensorrtx` which I don't use anymore, so maybe they won't work.
@@ -87,3 +87,4 @@ python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt 
 ## Reference
 - [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
 - [https://github.com/Megvii-BaseDetection/YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)
+- [https://github.com/dbolya/yolact](https://github.com/dbolya/yolact)
