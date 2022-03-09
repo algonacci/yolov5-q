@@ -24,6 +24,7 @@
 - [ ] coco eval
 - [ ] clean pruning code
 - [ ] more powerful `mask head`
+- [ ] areas
 
 
 ## Quick Start
