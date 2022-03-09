@@ -51,7 +51,6 @@ from .evaluator import Yolov5Evaluator
 
 
 class Trainer:
-    # TODO: add logger argument
     def __init__(self, hyp, opt, device, callbacks, logger, rank, local_rank, world_size) -> None:
         self.hyp = hyp
         self.opt = opt
@@ -106,30 +105,20 @@ class Trainer:
         self.after_train()
 
     def train_in_epoch(self):
-        for epoch in range(self.start_epoch, self.epochs):
-            self.before_epoch(epoch)
+        for self.epoch in range(self.start_epoch, self.epochs):
+            self.before_epoch()
             self.train_in_iter()
             early_stop = self.after_epoch()
             if early_stop:
                 break
 
     def train_in_iter(self):
-        for i, (imgs, targets, paths, _, masks) in self.pbar:
+        for self.iter, (imgs, targets, paths, _, masks) in self.pbar:
             imgs = self.before_iter(imgs)
-            loss_items = self.train_one_iter(i, imgs, targets, masks)
-            self.after_iter(i, imgs, targets, masks, paths, loss_items)
+            loss_items = self.train_one_iter(imgs, targets, masks)
+            self.after_iter(imgs, targets, masks, paths, loss_items)
 
-    def train_one_iter(self, i, imgs, targets, masks):
-        self.iter = i + self.batches * self.epoch  # number integrated batches (since train start)
-
-        # Warmup
-        if self.iter <= self.warmup_iters:
-            self._warmup()
-
-        # Multi-scale
-        if self.opt.multi_scale:
-            imgs = self._multi_scale(imgs)
-
+    def train_one_iter(self, imgs, targets, masks):
         # Forward
         with amp.autocast(enabled=self.cuda):
             pred = self.model(imgs)  # forward
@@ -147,13 +136,13 @@ class Trainer:
         self.scaler.scale(loss).backward()
 
         # Optimize
-        if self.iter - self.last_opt_step >= self.accumulate:
+        if self.progress_in_iter - self.last_opt_step >= self.accumulate:
             self.scaler.step(self.optimizer)  # optimizer.step
             self.scaler.update()
             self.optimizer.zero_grad()
             if self.ema:
                 self.ema.update(self.model)
-            self.last_opt_step = self.iter
+            self.last_opt_step = self.progress_in_iter
         return loss_items
 
     def before_train(self):
@@ -168,7 +157,7 @@ class Trainer:
         - loss, cause `ComputeLoss` need some attr in model.
         """
         w = self.save_dir / "weights"  # weights dir
-        self.last, self.best = w / "last.pt", w / "best.pt"
+        self.last, self.best, self.last_mosaic = w / "last.pt", w / "best.pt", w / "last_mosaic.pt"
 
         # Hyperparameters
         if isinstance(self.hyp, str):
@@ -334,15 +323,6 @@ class Trainer:
             if f is not self.best:
                 continue
             self.logger.info(f"\nValidating {f}...")
-            # self.results, _, _ = self.eval(
-            #     model=attempt_load(f, self.device).half(),
-            #     iou_thres=0.65
-            #     if self.is_coco
-            #     else 0.60,  # best pycocotools results at 0.65
-            #     save_json=self.is_coco,
-            #     verbose=True,
-            #     plots=True,
-            # )  # val best model with plots
 
             if not self.mask:
                 self.evaluator.plots = True
@@ -368,18 +348,19 @@ class Trainer:
         torch.cuda.empty_cache()
         return self.results
 
-    def before_epoch(self, epoch):
+    def before_epoch(self):
         """
         - sampling by image weights
         - close augment
         """
-        self.epoch = epoch
         nloss = 4 if self.mask else 3  #  (obj, cls, box, [seg])
         self.mloss = torch.zeros(nloss, device=self.device)  # mean losses
 
         self.model.train()
-        if self.epoch >= (self.epochs - self.no_aug_epochs):
+        if self.epoch == (self.epochs - self.no_aug_epochs):
+            self.logger.info("--->No mosaic aug now!")
             self.train_loader.close_augment()
+            self.save_ckpt(save_file=self.last_mosaic)
 
         # Update image weights (optional, single-GPU only)
         if self.opt.image_weights:
@@ -441,16 +422,25 @@ class Trainer:
         imgs = (
             imgs.to(self.device, non_blocking=True).float() / 255.0
         )  # uint8 to float32, 0-255 to 0.0-1.0
+
+        # Warmup
+        if self.progress_in_iter <= self.warmup_iters:
+            self._warmup()
+
+        # Multi-scale
+        if self.opt.multi_scale:
+            imgs = self._multi_scale(imgs)
+
         return imgs
 
-    def after_iter(self, i, imgs, targets, masks, paths, loss_items):
+    def after_iter(self, imgs, targets, masks, paths, loss_items):
         """
         - logger info
         """
         # Log
         if self.rank not in [-1, 0]:
             return
-        self.mloss = (self.mloss * i + loss_items) / (i + 1)  # update mean losses
+        self.mloss = (self.mloss * self.iter + loss_items) / (self.iter + 1)  # update mean losses
         mem = (
             f"{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G"  # (GB)
         )
@@ -476,7 +466,7 @@ class Trainer:
 
         self.callbacks.run(
             "on_train_batch_end",
-            self.iter,
+            self.progress_in_iter,
             self.model,
             imgs,
             targets,
@@ -487,8 +477,9 @@ class Trainer:
             self.plot_idx,
         )
 
+    @property
     def progress_in_iter(self):
-        pass
+        return self.iter + self.batches * self.epoch  # number integrated batches (since train start)
 
     def resume_train(self, ckpt):
         # Optimizer
@@ -519,10 +510,6 @@ class Trainer:
         lr = [x["lr"] for x in self.optimizer.param_groups]  # for loggers
         final_epoch = (self.epoch + 1 == self.epochs) or self.stopper.possible_stop
         if not self.noval or final_epoch:  # Calculate mAP
-            # self.results, self.maps, _ = self.eval(
-            #     model=self.ema.ema,
-            #     plots=False,
-            # )
             self.results, self.maps, _ = self.evaluator.run_training(
                 model=self.ema.ema,
                 dataloader=self.val_loader,
@@ -540,7 +527,7 @@ class Trainer:
 
         # Save model
         if (not self.nosave) or final_epoch:  # if save
-            self.save_ckpt(fi)
+            self.save_ckpt(save_file=self.last, best=self.best_fitness == fi)
             self.callbacks.run(
                 "on_model_save",
                 self.last,
@@ -551,7 +538,7 @@ class Trainer:
             )
         return fi
 
-    def save_ckpt(self, fi):
+    def save_ckpt(self, save_file, best=False):
         ckpt = {
             "epoch": self.epoch,
             "best_fitness": self.best_fitness,
@@ -562,8 +549,8 @@ class Trainer:
         }
 
         # Save last, best and delete
-        torch.save(ckpt, self.last)
-        if self.best_fitness == fi:
+        torch.save(ckpt, save_file)
+        if best:
             torch.save(ckpt, self.best)
         if (
             (self.epoch > 0)
@@ -659,7 +646,8 @@ class Trainer:
             self.lf = one_cycle(1, self.hyp["lrf"], self.epochs)  # cosine 1->hyp['lrf']
         scheduler = lr_scheduler.LambdaLR(
             optimizer, lr_lambda=self.lf
-        )  # plot_lr_scheduler(optimizer, scheduler, epochs)
+        ) 
+        # plot_lr_scheduler(optimizer, scheduler, self.epochs)
         return optimizer, scheduler
 
     def set_logger(self):
@@ -712,11 +700,11 @@ class Trainer:
 
     def _warmup(self):
         xi = [0, self.warmup_iters]  # x interp
-        self.accumulate = max(1, np.interp(self.iter, xi, [1, self.nbs / self.batch_size]).round())
+        self.accumulate = max(1, np.interp(self.progress_in_iter, xi, [1, self.nbs / self.batch_size]).round())
         for j, x in enumerate(self.optimizer.param_groups):
             # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
             x["lr"] = np.interp(
-                self.iter,
+                self.progress_in_iter,
                 xi,
                 [
                     self.hyp["warmup_bias_lr"] if j == 2 else 0.0,
@@ -725,7 +713,7 @@ class Trainer:
             )
             if "momentum" in x:
                 x["momentum"] = np.interp(
-                    self.iter, xi, [self.hyp["warmup_momentum"], self.hyp["momentum"]]
+                    self.progress_in_iter, xi, [self.hyp["warmup_momentum"], self.hyp["momentum"]]
                 )
 
     def _multi_scale(self, imgs):
@@ -754,16 +742,3 @@ class Trainer:
             mask_head=self.mask,
             mask_downsample_ratio=self.mask_ratio,
         )
-
-    # def _initialize_eval(self):
-    #     self.eval = partial(
-    #         val.run,
-    #         data=self.data_dict,
-    #         batch_size=self.batch_size // self.world_size * 2,
-    #         imgsz=self.imgsz,
-    #         single_cls=self.single_cls,
-    #         save_dir=self.save_dir,
-    #         dataloader=self.val_loader,
-    #         callbacks=self.callbacks,
-    #         compute_loss=self.compute_loss,
-    #     )
