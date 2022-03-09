@@ -201,7 +201,7 @@ for img_name in pbar:
             # print(det)
 
             for *xyxy, conf, cls in reversed(det):
-                label = "%s %.2f" % (names[int(cls)], conf)
+                label = "%s %.2f" % (names[i][int(cls)], conf)
                 plot_one_box(
                     xyxy, im0, label=label, color=colors[i][int(cls)], line_thickness=3
                 )
