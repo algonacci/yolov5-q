@@ -13,6 +13,8 @@ import re
 import signal
 import time
 import urllib
+import collections
+from itertools import repeat
 from pathlib import Path
 
 import cv2
@@ -398,3 +400,13 @@ def increment_path(path, exist_ok=False, sep="", mkdir=False):
     if not dir.exists() and mkdir:
         dir.mkdir(parents=True, exist_ok=True)  # make directory
     return path
+
+def _ntuple(n):
+    def parse(x):
+        if isinstance(x, collections.abc.Iterable):
+            return x
+        return tuple(repeat(x, n))
+    return parse
+
+to_1tuple = _ntuple(1)
+to_2tuple = _ntuple(2)

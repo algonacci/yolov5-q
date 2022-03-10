@@ -26,6 +26,7 @@
 - [ ] more powerful `mask head`
 - [ ] areas
 - [ ] better visualization
+- [ ] looks like `plot_masks` will make image blur
 
 
 ## Quick Start

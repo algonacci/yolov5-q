@@ -2,6 +2,7 @@ from ..utils.torch_utils import select_device
 from ..models.experimental import attempt_load
 from ..data.augmentations import letterbox
 from ..utils.boxes import non_max_suppression, scale_coords
+from ..utils.timer import Timer
 from ..utils.segment import (
     non_max_suppression_masks,
     process_mask_upsample,
@@ -9,24 +10,42 @@ from ..utils.segment import (
 )
 from ..utils.plots import Visualizer, plot_masks, colors
 from ..utils.torch_utils import is_parallel
+from ..utils.checker import check_img_size
+from ..utils.general import to_2tuple
 import os
 import numpy as np
 import torch
+import cv2
 
 
 class Yolov5:
     """Yolov5 detection, support multi image and one model with fp16 inference."""
 
-    def __init__(self, weights, device, img_hw, auto=False) -> None:
-        self.model = attempt_load(weights)
-        self.model = self.model.half()
+    def __init__(self, weights, device, img_hw=(384, 640), auto=False) -> None:
+        model = attempt_load(weights)
+        stride = int(model.stride.max())  # model stride
+        img_hw = to_2tuple(img_hw) if isinstance(img_hw, int) else img_hw
         self.device = select_device(device)
         self.auto = auto
         # inference hw
-        self.img_hw = img_hw
+        self.img_hw = check_img_size(img_hw, s=stride)
         # original hw
         self.ori_hw = []
-        self.vis = Visualizer(names=self.model.names)
+
+        self.model = model.half() if self.device != "cpu" else model
+        self.names = self.model.names
+        self.vis = Visualizer(names=self.names)
+
+        # time stuff
+        self.timer = Timer(start=False, cuda_sync=True, round=1, unit="ms")
+        self.times = {}
+
+    def warmup(self):
+        # Warmup model by running inference once
+        # only warmup GPU models
+        if self.device != "cpu":
+            im = torch.zeros(1, 3, *self.img_hw).to(self.device).half()  # input image
+            self.model(im)  # warmup
 
     def preprocess_one_img(self, image):
         """Preprocess one image.
@@ -75,7 +94,9 @@ class Yolov5:
         imgs = np.concatenate(resized_imgs, axis=0)
         return imgs
 
-    def postprocess_one_model(self, preds, conf_thres=0.4, iou_thres=0.5, classes=None):
+    def postprocess_one_model(
+        self, preds, conf_thres=0.4, iou_thres=0.5, classes=None, agnostic=False
+    ):
         """Postprocess multi images. NMS and scale coords to original image size.
 
         Args:
@@ -83,11 +104,16 @@ class Yolov5:
             conf_thres (float): confidence threshold.
             iou_thres (float): iou threshold.
             classes (None | List[int]): class filter according class index.
+            agnostic (bool): Whether to do nms as there is only one class.
         Return:
             outputs (List[torch.Tensor]): List[torch.Tensor(num_boxes, 6)]xB.
         """
         outputs = non_max_suppression(
-            preds, conf_thres, iou_thres, classes=classes, agnostic=False
+            preds,
+            conf_thres,
+            iou_thres,
+            classes=classes,
+            agnostic=agnostic,
         )
         for i, det in enumerate(outputs):  # detections per image
             if det is None or len(det) == 0:
@@ -115,12 +141,17 @@ class Yolov5:
             if isinstance(images, list)
             else self.preprocess_one_img
         )
+        self.timer.start(reset=True)
         imgs = preprocess(images)
         imgs = torch.from_numpy(imgs).to(self.device)
         imgs = imgs.half()
         imgs /= 255.0
+        self.times["preprocess"] = self.timer.since_last_check()
         preds = self.model(imgs)[0]
+        self.times["inference"] = self.timer.since_last_check()
         outputs = self.postprocess_one_model(preds, conf_thres, iou_thres, classes)
+        self.times["postprocess"] = self.timer.since_last_check()
+        self.times["total"] = self.timer.since_start()
         self.ori_hw.clear()
         return outputs
 
@@ -141,7 +172,7 @@ class Yolov5:
 
 
 class Yolov5Segment(Yolov5):
-    def __init__(self, weights, device, img_hw, auto=False) -> None:
+    def __init__(self, weights, device, img_hw=(384, 640), auto=False) -> None:
         super(Yolov5Segment, self).__init__(weights, device, img_hw, auto)
         det = (
             self.model.module.model[-1]
@@ -152,7 +183,13 @@ class Yolov5Segment(Yolov5):
 
     @torch.no_grad()
     def inference(
-        self, images, conf_thres=0.4, iou_thres=0.5, classes=None, areas=None
+        self,
+        images,
+        conf_thres=0.4,
+        iou_thres=0.5,
+        classes=None,
+        agnostic=False,
+        areas=None,
     ):
         """Inference.
 
@@ -170,20 +207,25 @@ class Yolov5Segment(Yolov5):
             if isinstance(images, list)
             else self.preprocess_one_img
         )
+        self.timer.start(reset=True)
         imgs = preprocess(images)
         imgs = torch.from_numpy(imgs).to(self.device)
         imgs = imgs.half()
-        self.imgs = imgs / 255.0  # this is for faster ploting masks
+        self.imgs = imgs / 255.0  # `self.imgs` is for faster ploting masks
+        self.times["preprocess"] = self.timer.since_last_check()
         preds, out = self.model(self.imgs)
         proto = out[1]
+        self.times["inference"] = self.timer.since_last_check()
         outputs, masks = self.postprocess_one_model(
-            preds, proto, conf_thres, iou_thres, classes
+            preds, proto, conf_thres, iou_thres, classes, agnostic
         )
+        self.times["postprocess"] = self.timer.since_last_check()
+        self.times["total"] = self.timer.since_start()
         self.ori_hw.clear()
         return outputs, masks
 
     def postprocess_one_model(
-        self, preds, proto, conf_thres=0.4, iou_thres=0.5, classes=None
+        self, preds, proto, conf_thres=0.4, iou_thres=0.5, classes=None, agnostic=False
     ):
         """Postprocess multi images. NMS and scale coords to original image size.
 
@@ -193,16 +235,19 @@ class Yolov5Segment(Yolov5):
             conf_thres (float): confidence threshold.
             iou_thres (float): iou threshold.
             classes (None | List[int]): class filter according class index.
+            agnostic (bool): Whether to do nms as there is only one class.
         Return:
-            outputs (List[torch.Tensor]): bbox+conf+cls, List[torch.Tensor(num_boxes, 6)]xB.
+            outputs (List[torch.Tensor]): bbox+conf+cls, List[torch.Tensor(num_boxes, 6)]xB,
+                in original hw space.
             masks (List[torch.Tensor]): binary mask, List[torch.Tensor(num_boxes, img_h, img_w)]xB.
+                in input hw space.
         """
         outputs = non_max_suppression_masks(
             preds,
             conf_thres,
             iou_thres,
             classes=classes,
-            agnostic=False,
+            agnostic=agnostic,
             mask_dim=self.mask_dim,
         )
         out_masks = []
@@ -229,6 +274,7 @@ class Yolov5Segment(Yolov5):
             outputs: bbox+conf+cls, List[torch.Tensor(num_boxes, 6)]xB.
             masks: binary masks, List[torch.Tensor(num_boxes, img_h, img_w)]xB.
         """
+        ori_type = type(images)
         # get original shape, cause self.ori_hw will be cleared
         images = images if isinstance(images, list) else [images]
         ori_hw = [img.shape[:2] for img in images]
@@ -239,33 +285,13 @@ class Yolov5Segment(Yolov5):
             idx = output[:, 4] > vis_confs
             masks = out_masks[i][idx]
             mcolors = [colors(int(cls)) for cls in output[:, 5]]
-            # NOTE: this way to draw masks is faster, 
+            # NOTE: this way to draw masks is faster,
             # from https://github.com/dbolya/yolact
             # image with masks, (img_h, img_w, 3)
             img_masks = plot_masks(self.imgs[i], masks, mcolors)
             # scale image to original hw
             img_masks = scale_masks(self.imgs[i].shape[1:], img_masks, ori_hw[i])
             images.append(img_masks)
-        images = images[0] if len(images) == 1 else images
+        # TODO: make this(ori_type stuff) clean
+        images = images[0] if (len(images) == 1) and type(images) != ori_type else images
         return self.vis(images, outputs, vis_confs)
-
-
-if __name__ == "__main__":
-    from tqdm import tqdm
-    import cv2
-
-    detector = Yolov5(weights="./weights/yolov5n.pt", device=0, img_hw=(384, 640))
-
-    cap = cv2.VideoCapture("/e/1.avi")
-    frames = 10000
-    pbar = tqdm(range(frames), total=frames)
-
-    for frame_num in pbar:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        outputs = detector(frame)
-        detector.visualize(frame, outputs)
-        cv2.imshow("p", frame)
-        if cv2.waitKey(1) == ord("q"):
-            break

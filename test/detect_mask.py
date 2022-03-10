@@ -8,7 +8,6 @@ source = "/e/1.avi"
 detector = Yolov5Segment(
     weights="/home/laughing/yolov5/runs/seg0301/coco_fix/weights/best.pt", device=0, img_hw=(384, 640)
 )
-stride, names = detector.model.stride, detector.model.names
 
 cap = cv2.VideoCapture(source)
 frames = 10000
@@ -22,6 +21,7 @@ def test_one_img():
             break
         outputs, masks = detector(frame)
         frame = detector.visualize(frame, outputs, masks)
+        pbar.desc = f"{detector.times}"
         cv2.imshow("p", frame)
         if cv2.waitKey(1) == ord("q"):
             break
@@ -34,6 +34,7 @@ def test_multi_img():
             break
         outputs, masks = detector([frame, frame.copy()])
         frames = detector.visualize([frame, frame.copy()], outputs, masks)
+        pbar.desc = f"{detector.times}"
         frame1, frame2 = frames
         cv2.imshow("p1", frame1)
         cv2.imshow("p2", frame2)
