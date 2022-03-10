@@ -2,7 +2,13 @@ from ..utils.torch_utils import select_device
 from ..models.experimental import attempt_load
 from ..data.augmentations import letterbox
 from ..utils.boxes import non_max_suppression, scale_coords
-from ..utils.plots import Visualizer
+from ..utils.segment import (
+    non_max_suppression_masks,
+    process_mask_upsample,
+    scale_masks,
+)
+from ..utils.plots import Visualizer, plot_masks, colors
+from ..utils.torch_utils import is_parallel
 import os
 import numpy as np
 import torch
@@ -16,7 +22,10 @@ class Yolov5:
         self.model = self.model.half()
         self.device = select_device(device)
         self.auto = auto
+        # inference hw
         self.img_hw = img_hw
+        # original hw
+        self.ori_hw = []
         self.vis = Visualizer(names=self.model.names)
 
     def preprocess_one_img(self, image):
@@ -83,9 +92,7 @@ class Yolov5:
         for i, det in enumerate(outputs):  # detections per image
             if det is None or len(det) == 0:
                 continue
-            det[:, :4] = scale_coords(
-                self.img_hw, det[:, :4], self.ori_hw[i], scale_fill=False
-            ).round()
+            det[:, :4] = scale_coords(self.img_hw, det[:, :4], self.ori_hw[i]).round()
         return outputs
 
     @torch.no_grad()
@@ -95,7 +102,7 @@ class Yolov5:
         """Inference.
 
         Args:
-            image (np.ndarray | List[np.ndarray] | str | List[str]): Input image, input images or 
+            image (np.ndarray | List[np.ndarray] | str | List[str]): Input image, input images or
                 image path or image paths.
             conf_thres (float): confidence threshold.
             iou_thres (float): iou threshold.
@@ -113,14 +120,14 @@ class Yolov5:
         imgs = imgs.half()
         imgs /= 255.0
         preds = self.model(imgs)[0]
-        output = self.postprocess_one_model(preds, conf_thres, iou_thres, classes)
+        outputs = self.postprocess_one_model(preds, conf_thres, iou_thres, classes)
         self.ori_hw.clear()
-        return output
+        return outputs
 
     def __call__(self, images):
         """This is a simplify inference.
         Args:
-            image (np.ndarray | List[np.ndarray] | str | List[str]): Input image, input images or 
+            image (np.ndarray | List[np.ndarray] | str | List[str]): Input image, input images or
                 image path or image paths.
         """
         return self.inference(images)
@@ -128,7 +135,7 @@ class Yolov5:
     def visualize(self, images, outputs, vis_confs=0.4):
         """Image visualize
         if images is a List of ndarray, then will return a List.
-        if images is a ndarray , then return ndarray.
+        if images is a ndarray, then return ndarray.
         """
         return self.vis(images, outputs, vis_confs)
 
@@ -136,6 +143,111 @@ class Yolov5:
 class Yolov5Segment(Yolov5):
     def __init__(self, weights, device, img_hw, auto=False) -> None:
         super(Yolov5Segment, self).__init__(weights, device, img_hw, auto)
+        det = (
+            self.model.module.model[-1]
+            if is_parallel(self.model)
+            else self.model.model[-1]
+        )  # Detect() module
+        self.mask_dim = det.mask_dim
+
+    @torch.no_grad()
+    def inference(
+        self, images, conf_thres=0.4, iou_thres=0.5, classes=None, areas=None
+    ):
+        """Inference.
+
+        Args:
+            image (np.ndarray | List[np.ndarray] | str | List[str]): Input image, input images or
+                image path or image paths.
+            conf_thres (float): confidence threshold.
+            iou_thres (float): iou threshold.
+            classes (None | List[int]): class filter according class index.
+        Return:
+            outputs (List[torch.Tensor]): List[torch.Tensor(num_boxes, 6)]xB.
+        """
+        preprocess = (
+            self.preprocess_multi_img
+            if isinstance(images, list)
+            else self.preprocess_one_img
+        )
+        imgs = preprocess(images)
+        imgs = torch.from_numpy(imgs).to(self.device)
+        imgs = imgs.half()
+        self.imgs = imgs / 255.0  # this is for faster ploting masks
+        preds, out = self.model(self.imgs)
+        proto = out[1]
+        outputs, masks = self.postprocess_one_model(
+            preds, proto, conf_thres, iou_thres, classes
+        )
+        self.ori_hw.clear()
+        return outputs, masks
+
+    def postprocess_one_model(
+        self, preds, proto, conf_thres=0.4, iou_thres=0.5, classes=None
+    ):
+        """Postprocess multi images. NMS and scale coords to original image size.
+
+        Args:
+            preds (torch.Tensor): bbox+conf+mask+cls, [B, num_boxes, classes+5].
+            proto (torch.Tensor): mask proto, [B, mask_dim, mask_h, mask_w].
+            conf_thres (float): confidence threshold.
+            iou_thres (float): iou threshold.
+            classes (None | List[int]): class filter according class index.
+        Return:
+            outputs (List[torch.Tensor]): bbox+conf+cls, List[torch.Tensor(num_boxes, 6)]xB.
+            masks (List[torch.Tensor]): binary mask, List[torch.Tensor(num_boxes, img_h, img_w)]xB.
+        """
+        outputs = non_max_suppression_masks(
+            preds,
+            conf_thres,
+            iou_thres,
+            classes=classes,
+            agnostic=False,
+            mask_dim=self.mask_dim,
+        )
+        out_masks = []
+        for i, det in enumerate(outputs):  # detections per image
+            if det is None or len(det) == 0:
+                continue
+            # mask stuff
+            masks_conf = det[:, 6:]
+            # binary mask, (img_h, img_w, n)
+            masks = process_mask_upsample(proto[i], masks_conf, det[:, :4], self.img_hw)
+            # n, img_h, img_w
+            masks = masks.permute(2, 0, 1).contiguous()
+            out_masks.append(masks)
+            # bbox stuff
+            det = det[:, :6]  # update the value in outputs, remove mask part.
+            det[:, :4] = scale_coords(self.img_hw, det[:, :4], self.ori_hw[i]).round()
+        return outputs, out_masks
+
+    def visualize(self, images, outputs, out_masks, vis_confs=0.4):
+        """Image visualize
+        if images is a List of ndarray, then will return a List.
+        if images is a ndarray, then return ndarray.
+        Args:
+            outputs: bbox+conf+cls, List[torch.Tensor(num_boxes, 6)]xB.
+            masks: binary masks, List[torch.Tensor(num_boxes, img_h, img_w)]xB.
+        """
+        # get original shape, cause self.ori_hw will be cleared
+        images = images if isinstance(images, list) else [images]
+        ori_hw = [img.shape[:2] for img in images]
+        # init the list to keep image with masks.
+        images = []
+        # draw masks
+        for i, output in enumerate(outputs):
+            idx = output[:, 4] > vis_confs
+            masks = out_masks[i][idx]
+            mcolors = [colors(int(cls)) for cls in output[:, 5]]
+            # NOTE: this way to draw masks is faster, 
+            # from https://github.com/dbolya/yolact
+            # image with masks, (img_h, img_w, 3)
+            img_masks = plot_masks(self.imgs[i], masks, mcolors)
+            # scale image to original hw
+            img_masks = scale_masks(self.imgs[i].shape[1:], img_masks, ori_hw[i])
+            images.append(img_masks)
+        images = images[0] if len(images) == 1 else images
+        return self.vis(images, outputs, vis_confs)
 
 
 if __name__ == "__main__":

@@ -181,7 +181,7 @@ class Visualizer(object):
             if conf < vis_conf:
                 continue
             label = '%s %.2f' % (self.names[int(cls)], conf)
-            color = colors[int(cls)]
+            color = colors(int(cls))
             plot_one_box(xyxy, img, label=label,
                          color=color, 
                          line_thickness=2)
@@ -835,25 +835,20 @@ def plot_images_boxes_and_masks(
 def plot_masks(img, masks, colors, alpha=0.5):
     """
     Args:
-        img (tensor): img on cuda, shape: [1, 3, h, w]
+        img (tensor): img on cuda, shape: [3, h, w], range: [0, 1]
         masks (tensor): predicted masks on cuda, shape: [n, h, w]
-        colors (list[list]): colors for predicted masks, [[r, g, b] * n]
+        colors (List[List[Int]]): colors for predicted masks, [[r, g, b] * n]
     Return:
         img after draw masks, shape: [h, w, 3]
 
     transform colors and send img_gpu to cpu for the most time.
     """
-    # for k in range(masks.shape[0]):
-    #     cv2.imshow('p', masks[k].cpu().numpy())
-    #     cv2.waitKey(0)
     img_gpu = img.clone()
     num_masks = len(masks)
     # [n, 1, 1, 3]
     # faster this way to transform colors
     colors = torch.tensor(colors, device=img.device).float() / 255.0
     colors = colors[:, None, None, :]
-    # colors = torch.cat([torch.tensor(color, device=img.device).view(1, 1, 1, 3).float() / 255.
-    #                      for color in colors])
     # [n, h, w, 1]
     masks = masks[:, :, :, None]
     masks_color = masks.repeat(1, 1, 1, 3) * colors * alpha
@@ -865,7 +860,7 @@ def plot_masks(img, masks, colors, alpha=0.5):
         masks_color_summand += masks_color_cumul.sum(dim=0)
 
     # print(inv_alph_masks.prod(dim=0).shape) # [h, w, 1]
-    img_gpu = img_gpu[0].flip(dims=[0])  # filp channel for opencv
+    img_gpu = img_gpu.flip(dims=[0])  # filp channel for opencv
     img_gpu = img_gpu.permute(1, 2, 0).contiguous()
     # [h, w, 3]
     img_gpu = img_gpu * inv_alph_masks.prod(dim=0) + masks_color_summand

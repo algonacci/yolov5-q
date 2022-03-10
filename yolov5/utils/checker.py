@@ -18,7 +18,6 @@ from .general import colorstr, make_divisible
 from .downloads import download
 
 FILE = Path(__file__).resolve()
-ROOT = Path('yolov5')
 
 def try_except(func):
     # try-except function. Usage: @try_except decorator
@@ -180,7 +179,7 @@ def check_version(
 
 @try_except
 def check_requirements(
-    requirements=ROOT / "requirements.txt", exclude=(), install=True
+    requirements="requirements.txt", exclude=(), install=True
 ):
     # Check installed dependencies meet requirements (pass *.txt file or list of packages)
     prefix = colorstr("red", "bold", "requirements:")
@@ -289,7 +288,7 @@ def check_file(file, suffix=""):
         files = []
         for d in "data", "models", "utils":  # search directories
             files.extend(
-                glob.glob(str(ROOT / d / "**" / file), recursive=True)
+                glob.glob(str(d / "**" / file), recursive=True)
             )  # find file
         assert len(files), f"File not found: {file}"  # assert file was found
         assert (

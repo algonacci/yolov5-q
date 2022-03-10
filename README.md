@@ -25,6 +25,7 @@
 - [ ] clean pruning code
 - [ ] more powerful `mask head`
 - [ ] areas
+- [ ] better visualization
 
 
 ## Quick Start

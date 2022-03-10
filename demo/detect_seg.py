@@ -177,7 +177,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
                 out_masks = det[:, 6:]  # [img_h, img_w, num]
                 masks = process_mask_upsample(proto_out[i], out_masks, det[:, :4],
                                               im.shape[2:])
-                img_masks = plot_masks(im, masks.permute(2, 0, 1).contiguous(), m_colors)
+                img_masks = plot_masks(im[0], masks.permute(2, 0, 1).contiguous(), m_colors)
                 annotator.im = scale_masks(im.shape[2:], img_masks, imc.shape)
                 # Rescale boxes from img_size to imc size
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], imc.shape).round()
@@ -188,7 +188,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
                 # Write results
-                for *xyxy, conf, cls in reversed(reversed(det[:, :6])):
+                for *xyxy, conf, cls in reversed(det[:, :6]):
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
