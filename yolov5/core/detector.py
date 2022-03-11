@@ -170,7 +170,6 @@ class Yolov5:
         if images is a List of ndarray, then will return a List.
         if images is a ndarray, then return ndarray.
         """
-        print(outputs)
         return self.vis(images, outputs, vis_confs)
 
 
