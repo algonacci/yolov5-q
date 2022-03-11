@@ -22,16 +22,18 @@ class Yolov5:
     """Yolov5 detection, support multi image and one model with fp16 inference."""
 
     def __init__(self, weights, device, img_hw=(384, 640), auto=False) -> None:
-        model = attempt_load(weights)
+        device = select_device(device)
+        model = attempt_load(weights, map_location=device)
         stride = int(model.stride.max())  # model stride
         img_hw = to_2tuple(img_hw) if isinstance(img_hw, int) else img_hw
-        self.device = select_device(device)
+
         self.auto = auto
         # inference hw
         self.img_hw = check_img_size(img_hw, s=stride)
         # original hw
         self.ori_hw = []
 
+        self.device = device
         self.model = model.half() if self.device != "cpu" else model
         self.names = self.model.names
         self.vis = Visualizer(names=self.names)
