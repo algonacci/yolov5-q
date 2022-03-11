@@ -38,7 +38,6 @@ Clone repo and install [requirements.txt](https://github.com/Laughing-q/yolov5-q
 **Python>=3.7.0** environment, including**PyTorch>=1.7.1**.
 
 ```shell
-pip install git+https://github.com/Laughing-q/YOLO-Q.git
 git clone https://github.com/Laughing-q/yolov5-q.git
 cd yolov5-q
 pip install -r requirements.txt
@@ -58,7 +57,7 @@ python tools/train.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.p
 
 - training segmentation
 ```shell
-python tools/train.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt --cfg ./configs/segment/yolov5s_seg.yaml --epochs 50 --batch-size 8 --mask
+python tools/train.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt --cfg ./configs/segment/yolov5s_seg.yaml --epochs 50 --batch-size 8 --mask --mask-ratio 8
 ```
 
 </details>
@@ -78,14 +77,30 @@ python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt 
 
 </details>
 
+<details open>
+<summary>Detection and Instance Segmentation</summary>
+
+- detection
+```shell
+python tools/detect.py --source img/dir/video/stream --weights weights/yolov5s.pt
+```
+
+- instance segmentation
+```shell
+python tools/detect.py --source img/dir/video/stream --weights weights/yolov5s.pt --mask
+```
+
+</details>
+
 
 ## Tips
 - Plot mask will occupy a lot of cuda memory, so `plots=False` when training by default, so you may need to run `tools/val.py` after training for more visualization.
 - `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
 - `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
-- Just put a `--mask` option and `--cfg` option, then you can train instance segmentation.
-- Just put a `--mask` option, then you can val instance segmentation.
 - not support `wandb` and `evolve`, cause I don't need them.
+- For `tools/train.py`, just put a `--mask` option and `--cfg` option, then you can train instance segmentation.
+- For `tools/val.py`, just put a `--mask` option, then you can val instance segmentation.
+- For `tools/detect.py`, just put a `--mask` option, then you can do instance segmentation.
 
 ## Reference
 - [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)

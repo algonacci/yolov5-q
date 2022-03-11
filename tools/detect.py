@@ -45,7 +45,7 @@ from yolov5.utils.boxes import (
     xyxy2xywh,
     save_one_box
 )
-from yolov5.core import Yolov5
+from yolov5.core import Yolov5, Yolov5Segment
 from yolov5.data import create_reader
 
 
@@ -68,6 +68,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
         name='exp',  # save results to project/name
         exist_ok=False,  # existing project/name ok, do not increment
         pause_det=False,
+        mask=False,
         ):
     pause = True
     source = str(source)
@@ -84,7 +85,8 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
     # Load model
-    detector = Yolov5(weights, device=device, img_hw=imgsz, auto=True)
+    Model = Yolov5Segment if mask else Yolov5
+    detector = Model(weights, device=device, img_hw=imgsz, auto=True)
     names = detector.names
 
     # Dataloader
@@ -103,6 +105,8 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
 
         # preprocess, inference, postprocess
         outputs = detector.inference(image, conf_thres, iou_thres, classes, agnostic_nms)
+        if mask:
+            outputs, masks = outputs
         # time stuff
         dt[0] += detector.times['preprocess']
         dt[1] += detector.times['inference']
@@ -110,7 +114,8 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
 
         # visualization
         if view_img or save_img:
-            image = detector.visualize(image, outputs)
+            args = [image, outputs, masks] if mask else [image, outputs]
+            image = detector.visualize(*args)
 
         # Process predictions
         for i, det in enumerate(outputs):  # per image
@@ -190,7 +195,7 @@ def parse_opt():
     parser.add_argument('-w', '--weights', nargs='+', type=str, default='yolov5s.pt', help='model path(s)')
     parser.add_argument('-s', '--source', type=str, default='data/images', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('-c', '--conf-thres', type=float, default=0.25, help='confidence threshold')
+    parser.add_argument('-c', '--conf-thres', type=float, default=0.4, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('-v', '--view-img', action='store_true', help='show results')
@@ -205,6 +210,7 @@ def parse_opt():
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('-p', '--pause-det', action='store_true', help='pasue the imshow when get some detections')
+    parser.add_argument('-m', '--mask', action='store_true', help='instance segmentation')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(FILE.stem, opt)
