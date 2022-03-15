@@ -32,7 +32,6 @@ from .data_utils import (
     IMG_FORMATS,
     HELP_URL,
     NUM_THREADS,
-    polygon2mask,
     polygon2mask_downsample,
     get_hash,
     img2label_paths,
@@ -48,7 +47,6 @@ from .augmentations import (
 )
 from ..utils.general import colorstr
 from ..utils.checker import check_dataset, check_yaml
-from ..utils.segment import segment2box, resample_segments
 from ..utils.boxes import (
     xywhn2xyxy,
     xyxy2xywhn,

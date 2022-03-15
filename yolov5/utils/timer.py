@@ -1,4 +1,3 @@
-# Copyright (c) OpenMMLab. All rights reserved.
 # from mmcv
 from time import time
 from time import sleep
