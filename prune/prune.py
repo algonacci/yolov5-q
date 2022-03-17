@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import copy
 from collections import defaultdict
 from typing import List, Tuple
-import yaml
+import argparse
 
 FILE = Path(__file__).resolve()
 
@@ -407,20 +407,45 @@ class ModelDetails:
 
 
 if __name__ == "__main__":
-    CFG_FILE = "/home/laughing/yolov5/models/yolov5n.yaml"
-    MODEL_FILE = "/home/laughing/yolov5/runs/train/exp/weights/best.pt"
-
-    PRUNING_FILE = "/home/laughing/yolov5/weights/pruned_auto_n.pt"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-w",
+        "--weights",
+        default='',
+        type=str,
+        help="original weights(pt)",
+    )
+    parser.add_argument(
+        "-s",
+        "--save-path",
+        default='',
+        type=str,
+        help="save path of model after pruning.",
+    )
+    parser.add_argument(
+        "-t",
+        "--threshold",
+        default=0.02,
+        type=float,
+        help="threshold of bn.",
+    )
+    parser.add_argument(
+        "-d",
+        "--data",
+        default='',
+        type=str,
+        help="config file of data, for eval model",
+    )
+    opt = parser.parse_args()
 
     device = torch.device("cpu")
-    # model = load_model(CFG_FILE, MODEL_FILE)  # load checkpoint
-    model = attempt_load(weights='/home/laughing/yolov5/runs/train/exp/weights/best.pt', fuse=False)  # load checkpoint
+    model = attempt_load(weights=opt.weights, fuse=False)  # load checkpoint
 
     pruned_prob = 0.0
     example_inputs = torch.zeros((1, 3, 640, 640), dtype=torch.float32).to()
 
     output_transform = None
-    thres = 0.02
+    thres = opt.threshold
 
     if thres != 0:
         thres = thres
@@ -431,9 +456,10 @@ if __name__ == "__main__":
 
     pruning = Pruning(model, (nn.BatchNorm2d,), ignore_modules=ignore_modules)
     pruned_model = pruning.pruning(thres=thres, check_only=False, weight_only=False)
-    # pruning.compare()
-    # pruning.save_pruned(save_path=PRUNING_FILE)
+    pruning.compare()
+    pruning.save_pruned(save_path=opt.save_path)
 
-    data = check_yaml('/home/laughing/yolov5/data/custom/guiyang_phone.yaml')
-    _ = run(data, model=pruned_model.cuda(), batch_size=8, imgsz=640, conf_thres=.001, iou_thres=.6,
-        device='0', save_json=False, plots=False, half=False)
+    if len(opt.data):
+        data = check_yaml(opt.data)
+        _ = run(data, model=pruned_model.cuda(), batch_size=8, imgsz=640, conf_thres=.001, iou_thres=.6,
+            device='0', save_json=False, plots=False, half=False)
