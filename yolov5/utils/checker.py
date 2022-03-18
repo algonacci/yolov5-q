@@ -14,10 +14,12 @@ import urllib
 import numpy as np
 import platform
 
+from typing import Iterable
 from .general import colorstr, make_divisible
 from .downloads import download
 
 FILE = Path(__file__).resolve()
+
 
 def try_except(func):
     # try-except function. Usage: @try_except decorator
@@ -28,6 +30,7 @@ def try_except(func):
             print(e)
 
     return handler
+
 
 def is_writeable(dir, test=False):
     # Return True if directory has write permissions, test opening a file with write permissions if test=True
@@ -62,7 +65,9 @@ def user_config_dir(dir="Ultralytics", env_var="YOLOV5_CONFIG_DIR"):
     path.mkdir(exist_ok=True)  # make if required
     return path
 
+
 CONFIG_DIR = user_config_dir()  # Ultralytics settings dir
+
 
 def is_docker():
     # Is environment a Docker container?
@@ -173,14 +178,13 @@ def check_version(
         assert result, s  # assert min requirements met
     if verbose and not result:
         import logging
+
         logging.warning(s)
     return result
 
 
 @try_except
-def check_requirements(
-    requirements="requirements.txt", exclude=(), install=True
-):
+def check_requirements(requirements="requirements.txt", exclude=(), install=True):
     # Check installed dependencies meet requirements (pass *.txt file or list of packages)
     prefix = colorstr("red", "bold", "requirements:")
     check_python()  # check python version
@@ -227,11 +231,18 @@ def check_img_size(imgsz, s=32, floor=0):
         new_size = max(make_divisible(imgsz, int(s)), floor)
     else:  # list i.e. img_size=[640, 480]
         new_size = [max(make_divisible(x, int(s)), floor) for x in imgsz]
-    if tuple(new_size) != imgsz:
+    # if new_size != imgsz:
+    if not is_equal(new_size, imgsz):
         print(
             f"WARNING: --img-size {imgsz} must be multiple of max stride {s}, updating to {new_size}"
         )
     return new_size
+
+
+def is_equal(a, b):
+    if isinstance(a, Iterable) and isinstance(b, Iterable) and len(a) == len(b):
+        return all([i == j for i, j in zip(a, b)])
+    return a == b
 
 
 def check_imshow():
@@ -287,9 +298,7 @@ def check_file(file, suffix=""):
     else:  # search
         files = []
         for d in "data", "models", "utils":  # search directories
-            files.extend(
-                glob.glob(str(d / "**" / file), recursive=True)
-            )  # find file
+            files.extend(glob.glob(str(d / "**" / file), recursive=True))  # find file
         assert len(files), f"File not found: {file}"  # assert file was found
         assert (
             len(files) == 1
@@ -367,6 +376,7 @@ def check_dataset(data, autodownload=True):
 
     return data  # dictionary
 
+
 def check_font(font="Arial.ttf", size=10):
     # Return a PIL TrueType Font, downloading to CONFIG_DIR if necessary
     font = Path(font)
@@ -378,6 +388,7 @@ def check_font(font="Arial.ttf", size=10):
         print(f"Downloading {url} to {font}...")
         torch.hub.download_url_to_file(url, str(font), progress=False)
         return ImageFont.truetype(str(font), size)
+
 
 def check_dict(dict1, dict2):
     """This func will check the keys of dict2 in dict1 or not."""
