@@ -69,8 +69,7 @@ class Yolov5:
             auto=self.auto,
             scaleFill=False,
         )
-        if self.auto:
-            self.img_hw = resized_img.shape[:2]
+        self.current_hw = resized_img.shape[:2]
 
         # H, W, C -> 1, C, H, W
         resized_img = resized_img[:, :, ::-1].transpose(2, 0, 1)[None, :]
@@ -120,7 +119,7 @@ class Yolov5:
         for i, det in enumerate(outputs):  # detections per image
             if det is None or len(det) == 0:
                 continue
-            det[:, :4] = scale_coords(self.img_hw, det[:, :4], self.ori_hw[i]).round()
+            det[:, :4] = scale_coords(self.current_hw, det[:, :4], self.ori_hw[i]).round()
         return outputs
 
     @torch.no_grad()
@@ -259,13 +258,13 @@ class Yolov5Segment(Yolov5):
             # mask stuff
             masks_conf = det[:, 6:]
             # binary mask, (img_h, img_w, n)
-            masks = process_mask_upsample(proto[i], masks_conf, det[:, :4], self.img_hw)
+            masks = process_mask_upsample(proto[i], masks_conf, det[:, :4], self.current_hw)
             # n, img_h, img_w
             masks = masks.permute(2, 0, 1).contiguous()
             out_masks.append(masks)
             # bbox stuff
             det = det[:, :6]  # update the value in outputs, remove mask part.
-            det[:, :4] = scale_coords(self.img_hw, det[:, :4], self.ori_hw[i]).round()
+            det[:, :4] = scale_coords(self.current_hw, det[:, :4], self.ori_hw[i]).round()
         return outputs, out_masks
 
     def visualize(self, images, outputs, out_masks, vis_confs=0.4):
@@ -281,9 +280,12 @@ class Yolov5Segment(Yolov5):
         images = images if isinstance(images, list) else [images]
         ori_hw = [img.shape[:2] for img in images]
         # init the list to keep image with masks.
-        images = []
+        # TODO: fix this bug when output is empty.
+        masks_images = []
         # draw masks
         for i, output in enumerate(outputs):
+            if output is None or len(output) == 0:
+                continue
             idx = output[:, 4] > vis_confs
             masks = out_masks[i][idx]
             mcolors = [colors(int(cls)) for cls in output[:, 5]]
@@ -293,7 +295,7 @@ class Yolov5Segment(Yolov5):
             img_masks = plot_masks(self.imgs[i], masks, mcolors)
             # scale image to original hw
             img_masks = scale_masks(self.imgs[i].shape[1:], img_masks, ori_hw[i])
-            images.append(img_masks)
+            masks_images.append(img_masks)
         # TODO: make this(ori_type stuff) clean
-        images = images[0] if (len(images) == 1) and type(images) != ori_type else images
+        images = masks_images[0] if (len(masks_images) == 1) and type(masks_images) != ori_type else images[0]
         return self.vis(images, outputs, vis_confs)

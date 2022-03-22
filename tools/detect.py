@@ -129,7 +129,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
 
             p = Path(p)  # to Path
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # im.txt
-            s += '%gx%g ' % detector.img_hw  # print string
+            s += '%gx%g ' % tuple(detector.current_hw)  # print string
 
             if len(det):
                 # Print results
