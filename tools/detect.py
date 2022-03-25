@@ -46,7 +46,7 @@ from yolov5.utils.boxes import (
     save_one_box
 )
 from yolov5.core import Yolov5, Yolov5Segment
-from yolov5.data import create_reader
+from lqcv.data import create_reader
 
 
 @torch.no_grad()
@@ -94,8 +94,6 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
     if webcam:
         cudnn.benchmark = True  # set True to speed up constant image size inference
 
-    vid_path, vid_writer = [None] * 1, [None] * 1
-
     # Run inference
     detector.warmup()  # warmup
     dt, seen = [0.0, 0.0, 0.0], 0
@@ -120,12 +118,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
         # Process predictions
         for i, det in enumerate(outputs):  # per image
             seen += 1
-            if webcam:  # batch_size >= 1
-                p, frame = path[i], dataset.count
-                image_copy = image_copy[i]
-                s += f'{i}: '
-            else:
-                p, frame = path, getattr(dataset, 'frame', 0)
+            p, frame = path, getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # im.txt
@@ -158,8 +151,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
                 if len(det) and pause_det:
                     pause = True
                 cv2.namedWindow('p', cv2.WINDOW_NORMAL)
-                # NOTE: just show one window if webcam.
-                cv2.imshow('p', image[0] if webcam else image)
+                cv2.imshow('p', image)
                 key = cv2.waitKey(0 if pause else 1)
                 pause = True if key == ord(' ') else False
                 if key == ord('q') or key == ord('e') or key == 27:
@@ -169,16 +161,8 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
             if save_img:
                 save_path = str(save_dir / p.name)  # im.jpg
                 if webcam:
-                    # TODO: fix this fucking bug
-                    # dataset.save(save_path, image[i], i)
-                    if vid_path[i] != save_path:  # new video
-                        vid_path[i] = save_path
-                        fps, w, h = 30, image[i].shape[1], image[i].shape[0]
-                        save_path += '.mp4'
-                        vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                    vid_writer[i].write(image[i])
-                else:
-                    dataset.save(save_path, image)
+                    save_path += ".mp4"
+                dataset.save(save_path, image)
 
     # Print results
     t = tuple(x / seen for x in dt)  # speeds per image
