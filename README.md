@@ -38,6 +38,7 @@ Clone repo and install [requirements.txt](https://github.com/Laughing-q/yolov5-q
 **Python>=3.7.0** environment, including**PyTorch>=1.7.1**.
 
 ```shell
+pip install git+https://github.com/Laughing-q/lqcv.git
 git clone https://github.com/Laughing-q/yolov5-q.git
 cd yolov5-q
 pip install -r requirements.txt
