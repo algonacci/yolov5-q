@@ -37,6 +37,7 @@ VID_FORMATS = [
     "wmv",
     "mkv",
     "vdo",
+    "flv",
 ]  # acceptable video suffixes
 NUM_THREADS = min(8, os.cpu_count())  # number of multiprocessing threads
 
