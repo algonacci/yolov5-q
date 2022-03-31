@@ -66,6 +66,24 @@ class MaskIOULoss(nn.Module):
         iou = masks_iou(pred_mask, gt_mask)
         return 1.0 - iou
 
+class DiceLoss(nn.Module):
+    """Dice loss(not test yet)."""
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pred_mask, gt_mask, mxyxy=None, reduction='sum'):
+        _, _, n = pred_mask.shape  # same as gt_mask
+        pred_mask = pred_mask.sigmoid()
+        if mxyxy is not None:
+            pred_mask = crop(pred_mask, mxyxy)
+            gt_mask = crop(gt_mask, mxyxy)
+        numerator = 2 * (pred_mask * gt_mask).sum(1)
+        denominator = (pred_mask * pred_mask).sum(-1) + (gt_mask * gt_mask).sum(-1)
+        loss = 1 - (numerator) / (denominator + 1e-4)
+        if reduction == 'none':
+            return loss
+        return loss.sum()
+
 
 class BCEBlurWithLogitsLoss(nn.Module):
     # BCEwithLogitLoss() with reduced missing label effects.
