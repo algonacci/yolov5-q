@@ -116,6 +116,7 @@ def letterbox(
     scaleFill=False,
     scaleup=True,
     stride=32,
+    center=True,  # center padding or left top padding
 ):
     # Resize and pad image while meeting stride-multiple constraints
     shape = im.shape[:2]  # current shape [height, width]
@@ -138,13 +139,14 @@ def letterbox(
         new_unpad = (new_shape[1], new_shape[0])
         ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
 
-    dw /= 2  # divide padding into 2 sides
-    dh /= 2
+    if center:
+        dw /= 2  # divide padding into 2 sides
+        dh /= 2
 
     if shape[::-1] != new_unpad:  # resize
         im = cv2.resize(im, new_unpad, interpolation=cv2.INTER_LINEAR)
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    top, bottom = int(round(dh - 0.1)) if center else 0, int(round(dh + 0.1))
+    left, right = int(round(dw - 0.1)) if center else 0, int(round(dw + 0.1))
     im = cv2.copyMakeBorder(
         im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color
     )  # add border
@@ -271,8 +273,9 @@ def random_perspective(
         )
         targets = targets[i]
         targets[:, 1:5] = new[i]
-        new_segments = np.array(new_segments)[i] if len(
-            new_segments) else np.array(new_segments)
+        new_segments = (
+            np.array(new_segments)[i] if len(new_segments) else np.array(new_segments)
+        )
 
     return (im, targets, new_segments) if return_seg else (im, targets)
 

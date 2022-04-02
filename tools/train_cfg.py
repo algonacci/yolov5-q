@@ -126,6 +126,8 @@ if __name__ == "__main__":
     Usage:
         python tools/train_cfg.py file=opt.yaml weights=yolov5s.pt
     then you just training with opt.yaml and the weights will be replaced by `yolov5s.pt`.
+
+    this won't support DDP mode for now.
     """
     conf = OmegaConf.from_cli()
     file = conf.get('file', None)
