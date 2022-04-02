@@ -766,7 +766,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             torch.stack(masks, axis=0)
             if len(masks)
             else torch.zeros(
-                nl, self.img_size // self.downsample_ratio, self.img_size // self.downsample_ratio
+                nl, img.shape[0] // self.downsample_ratio, img.shape[1] // self.downsample_ratio
             )
         )
         # TODO: albumentations support
