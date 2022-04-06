@@ -258,3 +258,4 @@ fabric.properties
 
 # temp file
 temp.*
+*.npy

@@ -360,7 +360,8 @@ class Trainer:
         if self.epoch == (self.epochs - self.no_aug_epochs):
             self.logger.info("--->No mosaic aug now!")
             self.train_loader.close_augment()
-            self.save_ckpt(save_file=self.last_mosaic)
+            if self.rank in [-1, 0]:
+                self.save_ckpt(save_file=self.last_mosaic)
 
         # Update image weights (optional, single-GPU only)
         if self.opt.image_weights:
