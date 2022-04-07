@@ -63,21 +63,21 @@ class TestPost:
 
 
 if __name__ == "__main__":
-    # preds = [
-    #     "./outputs_int8/147.npy",
-    #     "./outputs_int8/148.npy",
-    #     "./outputs_int8/149.npy",
-    # ]
     preds = [
-        "./outputs_fp32/147.npy",
-        "./outputs_fp32/148.npy",
-        "./outputs_fp32/149.npy",
+        "./outputs_int8/147.npy",
+        "./outputs_int8/148.npy",
+        "./outputs_int8/149.npy",
     ]
+    # preds = [
+    #     "./outputs_fp32/147.npy",
+    #     "./outputs_fp32/148.npy",
+    #     "./outputs_fp32/149.npy",
+    # ]
     test = TestPost(preds=preds)
     vis = Visualizer(names=list(range(80)))
     output = test()
     print(output.shape)
-    output = non_max_suppression(output, conf_thres=0.4)
+    output = non_max_suppression(output, conf_thres=0.2)
     # print(output)
 
     img = cv2.imread('/home/laughing/Downloads/coco_calib/COCO_train2014_000000015658.jpg')
@@ -87,7 +87,7 @@ if __name__ == "__main__":
             continue
         det[:, :4] = scale_coords((640, 640), det[:, :4], img.shape[:2]).round()
 
-    # print(output)
-    img = vis(img, output, vis_confs=0.2)
+    print(output)
+    img = vis(img, output, vis_confs=0.0)
     cv2.imshow('p', img)
     cv2.waitKey(0)

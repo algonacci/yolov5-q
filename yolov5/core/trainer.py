@@ -332,9 +332,10 @@ class Trainer:
                 compute_loss=self.compute_loss,
             )
             if self.is_coco:
+                lr = [x["lr"] for x in self.optimizer.param_groups]  # for loggers
                 self.callbacks.run(
                     "on_fit_epoch_end",
-                    list(self.mloss) + list(self.results) + self.lr,
+                    list(self.mloss) + list(self.results) + lr,
                     self.epoch,
                     self.best_fitness,
                     self.fi,
