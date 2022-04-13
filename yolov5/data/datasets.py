@@ -25,6 +25,11 @@ from torch.utils.data import distributed
 from torch.utils.data import Dataset as torchDataset
 from torch.utils.data.sampler import RandomSampler
 from tqdm import tqdm
+from lqcv.bbox.convert import (
+    xywhn2xyxy,
+    xyxy2xywhn,
+    xyn2xy,
+)
 from .paste import paste1
 from .samplers import YoloBatchSampler
 from .dataloadering import InfiniteDataLoader, DataLoader
@@ -47,11 +52,6 @@ from .augmentations import (
 )
 from ..utils.general import colorstr
 from ..utils.checker import check_dataset, check_yaml
-from ..utils.boxes import (
-    xywhn2xyxy,
-    xyxy2xywhn,
-    xyn2xy,
-)
 from ..utils.torch_utils import torch_distributed_zero_first
 
 
