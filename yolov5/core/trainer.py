@@ -337,8 +337,6 @@ class Trainer:
                     "on_fit_epoch_end",
                     list(self.mloss) + list(self.results) + lr,
                     self.epoch,
-                    self.best_fitness,
-                    self.fi,
                 )
 
         self.callbacks.run("on_train_end", self.plots, self.epoch, masks=self.mask)
@@ -525,19 +523,11 @@ class Trainer:
         if fi > self.best_fitness:
             self.best_fitness = fi
         log_vals = list(self.mloss) + list(self.results) + lr
-        self.callbacks.run("on_fit_epoch_end", log_vals, self.epoch, self.best_fitness, fi)
+        self.callbacks.run("on_fit_epoch_end", log_vals, self.epoch)
 
         # Save model
         if (not self.nosave) or final_epoch:  # if save
             self.save_ckpt(save_file=self.last, best=self.best_fitness == fi)
-            self.callbacks.run(
-                "on_model_save",
-                self.last,
-                self.epoch,
-                final_epoch,
-                self.best_fitness,
-                fi,
-            )
         return fi
 
     def save_ckpt(self, save_file, best=False):

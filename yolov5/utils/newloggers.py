@@ -112,7 +112,7 @@ class NewLoggers:
         # Callback runs on val end
         pass
 
-    def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
+    def on_fit_epoch_end(self, vals, epoch):
         # Callback runs at the end of each fit (train+val) epoch
         x = {k: v for k, v in zip(self.keys, vals)}  # dict
         if self.csv and self.save_dir.exists():
@@ -226,7 +226,7 @@ class NewLoggersMask(NewLoggers):
                     daemon=True,
                 ).start()
 
-    def on_fit_epoch_end(self, vals, epoch, best_fitness, fi):
+    def on_fit_epoch_end(self, vals, epoch):
         # Callback runs at the end of each fit (train+val) epoch
         x = {k: v for k, v in zip(self.keys, vals)}  # dict
         if self.csv and self.save_dir.exists():
