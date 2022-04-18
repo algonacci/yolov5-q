@@ -21,12 +21,13 @@
 - [ ] `DetectSegment` head support `gd`
 - [ ] better way to compute seg loss
 - [ ] coco datasets
-- [ ] coco eval
+- [X] coco eval
 - [ ] clean pruning code
 - [ ] more powerful `mask head`
 - [ ] areas
 - [ ] better visualization
 - [ ] looks like `plot_masks` will make image blur
+- [ ] plot_images bug
 
 
 ## Quick Start

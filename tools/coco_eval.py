@@ -21,12 +21,12 @@ if __name__ == "__main__":
         iou_thres=0.6,
         exist_ok=False,
         half=True,
-        mask=True,
+        mask=False,
     )
 
     evaluator.run(
-        weights="./runs/seg0301/coco_s/weights/best.pt", batch_size=2, imgsz=640, save_json=True
-        # weights="./weights/yolov5s.pt", batch_size=16, imgsz=640, save_json=True
+        # weights="./runs/seg0301/coco_s/weights/best.pt", batch_size=2, imgsz=640, save_json=True
+        weights="./weights/yolov5s.pt", batch_size=16, imgsz=640, save_json=True
     )
 
     # anno = COCO('/dataset/dataset/COCO/annotations/instances_val2017.json')  # init annotations api
