@@ -58,7 +58,7 @@ def main(opt):
         data=opt.data,
         conf_thres=opt.conf_thres,
         iou_thres=opt.iou_thres,
-        device=opt.iou_thres,
+        device=opt.device,
         single_cls=opt.single_cls,
         augment=opt.augment,
         verbose=opt.verbose,

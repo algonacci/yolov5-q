@@ -71,8 +71,8 @@ colors = Colors()  # create instance for 'from utils.plots import colors'
 
 
 class Annotator:
-    # if RANK in (-1, 0):
-        # check_font()  # download TTF if necessary
+    if RANK in (-1, 0):
+        check_font()  # download TTF if necessary
 
     # YOLOv5 Annotator for train/val mosaics and jpgs and detect/hub inference annotations
     def __init__(
