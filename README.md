@@ -30,6 +30,12 @@
 - [ ] plot_images bug
 
 
+## Models
+| Model         | size<br><sup>(pixels) | mAP<sup>val<br>bbox | mAP<sup>val<br>mask | Speed<br><sup>RTX2070 b1<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>@640 (B) |
+|---------------|-----------------------|---------------------|---------------------|----------------------------------|--------------------|------------------------|
+| `yolov5s-seg` | 640                   | 38                  | 28.1                | 8.8ms                            | 7.4M               | 25.9                   |
+| `yolov5m-seg` | 640                   | 45.2                | 33.1                | 11.2ms                           | 22M                | 71.1                   |
+
 ## Quick Start
 
 <details open>

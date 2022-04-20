@@ -40,6 +40,7 @@ from ..utils.segment import (
     mask_iou,
     process_mask,
     process_mask_upsample,
+    scale_masks,
 )
 from ..utils.metrics import ap_per_class, ap_per_class_box_and_mask, ConfusionMatrix
 from ..utils.plots import output_to_target, plot_images_boxes_and_masks
@@ -65,10 +66,9 @@ def save_one_json(predn, jdict, path, class_map, pred_masks=None):
     box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
 
     if pred_masks is not None:
+        pred_masks = np.transpose(pred_masks, (2, 0, 1))
         rles = [
-            mask_util.encode(
-                np.asarray(mask[:, :, None].cpu().numpy(), order="F", dtype="uint8")
-            )[0]
+            mask_util.encode(np.asarray(mask[:, :, None], order="F", dtype="uint8"))[0]
             for mask in pred_masks
         ]
         for rle in rles:
@@ -84,23 +84,6 @@ def save_one_json(predn, jdict, path, class_map, pred_masks=None):
         if pred_masks is not None:
             pred_dict["segmentation"] = rles[i]
         jdict.append(pred_dict)
-
-
-def save_one_json_(predn, jdict, path, class_map):
-    # Save one JSON result {"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}
-    image_id = int(path.stem) if path.stem.isnumeric() else path.stem
-    box = xyxy2xywh(predn[:, :4])  # xywh
-    box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
-
-    for p, b in zip(predn.tolist(), box.tolist()):
-        jdict.append(
-            {
-                "image_id": image_id,
-                "category_id": class_map[int(p[5])],
-                "bbox": [round(x, 3) for x in b],
-                "score": round(p[4], 5),
-            }
-        )
 
 
 @torch.no_grad()
@@ -221,19 +204,24 @@ class Yolov5Evaluator:
             # Statistics per image
             for si, pred in enumerate(out):
                 self.seen += 1
-                predn = pred.clone()
 
-                # NOTE
-                # I tested `compute_stat` and `compute_stat_native`,
-                # it shows the same results.
-                # but maybe I didn't do enough experiments,
-                # so I left the related code(`compute_stat_native`).
-                self.compute_stat(si, predn, targets, masks, train_out)
-                # shape = shapes[si][0]
-                # ratio_pad = shapes[si][1]
-                # self.compute_stat_native(si, img, predn, targets, masks, train_out, shape, ratio_pad)
+                # eval in every image level
+                labels = targets[targets[:, 0] == si, 1:]
+                gt_masksi = masks[targets[:, 0] == si] if masks is not None else None
 
-            self.plot_images(batch_i, img, targets, masks, out, paths)
+                # get predition masks
+                proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
+                pred_maski = self.get_predmasks(pred, proto_out, gt_masksi.shape[1:])
+
+                # for visualization
+                if self.plots and batch_i < 3 and pred_maski is not None:
+                    self.pred_masks.append(pred_maski.cpu())
+
+                # NOTE: eval in training image-size space
+                self.compute_stat(pred, pred_maski, labels, gt_masksi)
+
+            if self.plots and batch_i < 3:
+                self.plot_images(batch_i, img, targets, masks, out, paths)
 
         # compute map and print it.
         t = self.after_infer()
@@ -289,34 +277,62 @@ class Yolov5Evaluator:
                 shape = shapes[si][0]
                 ratio_pad = shapes[si][1]
 
+                # eval in every image level
+                labels = targets[targets[:, 0] == si, 1:]
+                gt_masksi = masks[targets[:, 0] == si] if masks is not None else None
+
+                # get predition masks
+                proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
+                pred_maski = self.get_predmasks(pred, proto_out, gt_masksi.shape[1:])
+
+                # for visualization
+                if self.plots and batch_i < 3 and pred_maski is not None:
+                    self.pred_masks.append(pred_maski.cpu())
+
                 # NOTE: eval in training image-size space
-                self.compute_stat(si, pred, targets, masks, train_out)
+                self.compute_stat(pred, pred_maski, labels, gt_masksi)
+
+                # no preditions, not save anything
+                if len(pred) == 0:
+                    continue
 
                 if save_txt or save_json:
+                    # clone() is for plot_images work correctly
+                    predn = pred.clone()
                     # 因为test时添加了0.5的padding，因此这里与数据加载的padding不一致，所以需要转入ratio_pad
                     scale_coords(
-                        img[si].shape[1:], pred[:, :4], shape, ratio_pad
+                        img[si].shape[1:], predn[:, :4], shape, ratio_pad
                     )  # native-space pred
                 # Save/log
                 if save_txt and self.save_dir.exists():
                     # NOTE: convert coords to native space when save txt.
+                    # support save box preditions only
                     save_one_txt(
-                        pred,
+                        predn,
                         save_conf,
                         shape,
                         file=self.save_dir / "labels" / (path.stem + ".txt"),
                     )
                 if save_json and self.save_dir.exists():
                     # NOTE: convert coords to native space when save json.
+                    # if pred_maski is not None:
+                    # h, w, n
+                    pred_maski = scale_masks(
+                        img[si].shape[1:],
+                        pred_maski.permute(1, 2, 0).contiguous().cpu().numpy(),
+                        shape,
+                        ratio_pad,
+                    )
                     save_one_json(
-                        pred,
+                        predn,
                         self.jdict,
                         path,
                         self.class_map,
-                        self.pred_masks[si] if len(self.pred_masks) else None,
+                        pred_maski,
                     )  # append to COCO-JSON dictionary
 
-            self.plot_images(batch_i, img, targets, masks, out, paths)
+            if self.plots and batch_i < 3:
+                self.plot_images(batch_i, img, targets, masks, out, paths)
 
         # compute map and print it.
         t = self.after_infer()
@@ -500,29 +516,48 @@ class Yolov5Evaluator:
             correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
         return correct
 
-    def process_batch_masks(self, predn, proto_out, gt_masksi, labels):
+    def get_predmasks(self, pred, proto_out, gt_shape):
+        """Get pred masks in different ways.
+        1. process_mask, for val when training, eval with low quality(1/mask_ratio of original size)
+            mask for saving cuda memory.
+        2. process_mask_upsample, for val after training to get high quality mask(original size).
+
+        Args:
+            pred(torch.Tensor): output of network, (N, 5 + mask_dim + class).
+            proto_out(torch.Tensor): output of mask prototype, (mask_dim, mask_h, mask_w).
+            gt_shape(tuple): shape of gt mask, this shape may not equal to input size of
+                input image, Cause the mask_downsample_ratio.
+        Return:
+            pred_mask(torch.Tensor): predition of final masks with the same size with
+                input image, (N, input_h, input_w).
+        """
+        if proto_out is None or len(pred) == 0:
+            return None
+        process = process_mask_upsample if self.plots else process_mask
+        gt_shape = (
+            gt_shape[0] * self.mask_downsample_ratio,
+            gt_shape[1] * self.mask_downsample_ratio,
+        )
+        # n, h, w
+        pred_mask = (
+            process(proto_out, pred[:, 6:], pred[:, :4], shape=gt_shape)
+            .permute(2, 0, 1)
+            .contiguous()
+        )
+        return pred_mask
+
+    def process_batch_masks(self, predn, pred_maski, gt_masksi, labels):
         assert not (
-            (proto_out is None) ^ (gt_masksi is None)
+            (pred_maski is None) ^ (gt_masksi is None)
         ), "`proto_out` and `gt_masksi` should be both None or both exist."
-        if proto_out is None and gt_masksi is None:
-            return torch.zeros(0, self.niou, dtype=torch.bool), None
+        if pred_maski is None and gt_masksi is None:
+            return torch.zeros(0, self.niou, dtype=torch.bool)
 
         correct = torch.zeros(
             predn.shape[0],
             self.iouv.shape[0],
             dtype=torch.bool,
             device=self.iouv.device,
-        )
-        process = process_mask_upsample if self.plots else process_mask
-        gt_shape = (
-            gt_masksi.shape[1] * self.mask_downsample_ratio,
-            gt_masksi.shape[2] * self.mask_downsample_ratio,
-        )
-        # n, h, w
-        pred_maski = (
-            process(proto_out, predn[:, 6:], predn[:, :4], shape=gt_shape)
-            .permute(2, 0, 1)
-            .contiguous()
         )
 
         if not self.plots:
@@ -553,17 +588,10 @@ class Yolov5Evaluator:
                 matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
             matches = torch.Tensor(matches).to(self.iouv.device)
             correct[matches[:, 1].long()] = matches[:, 2:3] >= self.iouv
-        return correct, pred_maski
+        return correct
 
-    def compute_stat(self, si, predn, targets, gt_masks, train_out):
+    def compute_stat(self, predn, pred_maski, labels, gt_maski):
         """Compute states about ious. with boxs size in training img-size space."""
-        labels = targets[targets[:, 0] == si, 1:]
-        # labels = targets[targets[:, 0] == si, 1:]
-        # if there is `proto_out`(train_out[1]) and gt_masks is not None,
-        # then masks exist, or there is no masks.
-        masksi = gt_masks if gt_masks is None else gt_masks[targets[:, 0] == si]
-        proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
-
         nl = len(labels)
         tcls = labels[:, 0].tolist() if nl else []  # target class
 
@@ -592,81 +620,12 @@ class Yolov5Evaluator:
             correct_boxes = self.process_batch(predn, labelsn, self.iouv)
 
             # masks
-            correct_masks, pred_maski = self.process_batch_masks(
-                predn, proto_out, masksi, labelsn
+            correct_masks = self.process_batch_masks(
+                predn, pred_maski, gt_maski, labelsn
             )
 
             if self.plots:
                 self.confusion_matrix.process_batch(predn, labelsn)
-                # TODO
-                if pred_maski is not None:
-                    self.pred_masks.append(pred_maski)
-        else:
-            correct_boxes = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
-            correct_masks = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
-        self.stats.append(
-            (
-                correct_masks.cpu(),
-                correct_boxes.cpu(),
-                predn[:, 4].cpu(),
-                predn[:, 5].cpu(),
-                tcls,
-            )
-        )  # (correct, conf, pcls, tcls)
-
-    def compute_stat_native(
-        self, si, img, predn, targets, gt_masks, train_out, shape, ratio_pad
-    ):
-        """Compute states about ious. with boxs size in native space."""
-        labels = targets[targets[:, 0] == si, 1:]
-        # if there is `proto_out`(train_out[1]) and gt_masks is not None,
-        # then masks exist, or there is no masks.
-        masksi = gt_masks if gt_masks is None else gt_masks[targets[:, 0] == si]
-        proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
-
-        nl = len(labels)
-        tcls = labels[:, 0].tolist() if nl else []  # target class
-
-        if len(predn) == 0:
-            if nl:
-                self.stats.append(
-                    (
-                        torch.zeros(0, self.niou, dtype=torch.bool),  # boxes
-                        torch.zeros(0, self.niou, dtype=torch.bool),  # masks
-                        torch.Tensor(),
-                        torch.Tensor(),
-                        tcls,
-                    )
-                )
-            return
-
-        # Predictions
-        if self.single_cls:
-            predn[:, 5] = 0
-        scale_coords(
-            img[si].shape[1:], predn[:, :4], shape, ratio_pad
-        )  # native-space pred
-
-        # Evaluate
-        if nl:
-            tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-            scale_coords(
-                img[si].shape[1:], tbox, shape, ratio_pad
-            )  # native-space labels
-            labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-            # boxes
-            correct_boxes = self.process_batch(predn, labelsn, self.iouv)
-
-            # masks
-            correct_masks, pred_maski = self.process_batch_masks(
-                predn, proto_out, masksi, labelsn
-            )
-
-            if self.plots:
-                self.confusion_matrix.process_batch(predn, labelsn)
-                # TODO
-                if pred_maski is not None:
-                    self.pred_masks.append(pred_maski)
         else:
             correct_boxes = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
             correct_masks = torch.zeros(predn.shape[0], self.niou, dtype=torch.bool)
@@ -694,7 +653,7 @@ class Yolov5Evaluator:
                 )
 
     def plot_images(self, i, img, targets, masks, out, paths):
-        if (not self.plots) or i >= 3 or (not self.save_dir.exists()):
+        if not self.save_dir.exists():
             return
         # plot ground truth
         f = self.save_dir / f"val_batch{i}_labels.jpg"  # labels

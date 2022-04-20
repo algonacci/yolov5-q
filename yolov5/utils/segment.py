@@ -270,10 +270,8 @@ def scale_masks(img1_shape, masks, img0_shape, ratio_pad=None):
     
     if len(masks.shape) < 2:
         raise ValueError(f'"len of masks shape" should be 2 or 3, but got {len(masks.shape)}')
-    if len(masks.shape) == 2:
-        masks = masks[:, :, None]
     # masks_h, masks_w, n
-    masks = masks[tl_pad[0]:br_pad[0], tl_pad[1]:br_pad[1], :]
+    masks = masks[tl_pad[0]:br_pad[0], tl_pad[1]:br_pad[1]]
     # 1, n, masks_h, masks_w
     # masks = masks.permute(2, 0, 1).contiguous()[None, :]
     # # shape = [1, n, masks_h, masks_w] after F.interpolate, so take first element
@@ -281,6 +279,10 @@ def scale_masks(img1_shape, masks, img0_shape, ratio_pad=None):
     # masks = masks.permute(1, 2, 0).contiguous()
     # masks_h, masks_w, n
     masks = cv2.resize(masks, (img0_shape[1], img0_shape[0]))
+
+    # keepdim
+    if len(masks.shape) == 2:
+        masks = masks[:, :, None]
 
     return masks
 
