@@ -1,10 +1,12 @@
-## README
+## 📖README
 - This repo is plan for instance segmentation based on yolov5 and yolact.
 - The weights in releases support detection only, it's just suit this repo.
 - This repo is experimental, it's semi-finished for now.
 - I wrote some scripts to export `yolov5` through `tensorrtx` which I don't use anymore, so maybe they won't work.
+- mAP<sub>mask</sub> seems too low compared with mAP<sub>bbox</sub>, cause this is a naive version, I haven't do many experiments yet.
+- The weights(`s`, `m`, `l`) will releases when I finish my `yolov5l` training.
 
-## TODO
+## ✍TODO
 - [X] `plot_results`
 - [X] `process_masks` mask cuda out of memory
 - [X] `detect_seg.py`
@@ -29,14 +31,31 @@
 - [ ] looks like `plot_masks` will make image blur
 - [ ] plot_images bug
 
+## 🖼️Results
+<div align=center>
+<img src="./assert/000000000632.jpg"/>
+</div>
+<div align=center>
+<img src="./assert/000000001268.jpg"/>
+</div>
+<div align=center>
+<img src="./assert/000000001532.jpg"/>
+</div>
+<div align=center>
+<img src="./assert/000000091921.jpg"/>
+</div>
+<div align=center>
+<img src="./assert/000000118209.jpg"/>
+</div>
 
-## Models
+
+## 🪵Models
 | Model         | size<br><sup>(pixels) | mAP<sup>val<br>bbox | mAP<sup>val<br>mask | Speed<br><sup>RTX2070 b1<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>@640 (B) |
 |---------------|-----------------------|---------------------|---------------------|----------------------------------|--------------------|------------------------|
 | `yolov5s-seg` | 640                   | 38                  | 28.1                | 8.8ms                            | 7.4M               | 25.9                   |
 | `yolov5m-seg` | 640                   | 45.2                | 33.1                | 11.2ms                           | 22M                | 71.1                   |
 
-## Quick Start
+## 🎨Quick Start
 
 <details open>
 <summary>Installation</summary>
@@ -64,7 +83,7 @@ Prepare your objection labels like [yolov5](https://github.com/ultralytics/yolov
 python tools/train.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt --epochs 50 --batch-size 8
 ```
 
-Prepare your mask labels like below to train instance segmentation:
+Prepare your mask labels like below to train instance segmentation, `xy` is the polygon point of mask:
 ```shell
 0 x1 y1 x2 y2 x3 y3 ...
 1 x1 y1 x2 y2 x3 y3 x4 y4 x5 y5...
@@ -113,7 +132,7 @@ python tools/detect.py --source img/dir/video/stream --weights weights/yolov5s.p
 </details>
 
 
-## Tips
+## 🖌Tips
 - Plot mask will occupy a lot of cuda memory, so `plots=False` when training by default, so you may need to run `tools/val.py` after training for more visualization.
 - `process_mask` will save a lot of cuda memory, but get rough masks(`plots=False`).
 - `process_mask_unsample` will occupy a lot of cuda memory, but get better masks(`plots=False`).
@@ -122,7 +141,7 @@ python tools/detect.py --source img/dir/video/stream --weights weights/yolov5s.p
 - For `tools/val.py`, just put a `--mask` option, then you can val instance segmentation.
 - For `tools/detect.py`, just put a `--mask` option, then you can do instance segmentation.
 
-## Reference
+## 🍔Reference
 - [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
 - [https://github.com/Megvii-BaseDetection/YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)
 - [https://github.com/dbolya/yolact](https://github.com/dbolya/yolact)

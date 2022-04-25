@@ -287,7 +287,11 @@ class Yolov5Evaluator:
 
                 # get predition masks
                 proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
-                pred_maski = self.get_predmasks(pred, proto_out, gt_masksi.shape[1:])
+                pred_maski = self.get_predmasks(
+                    pred,
+                    proto_out,
+                    gt_masksi.shape[1:] if gt_masksi is not None else None,
+                )
 
                 # for visualization
                 if self.plots and batch_i < 3 and pred_maski is not None:
@@ -342,10 +346,11 @@ class Yolov5Evaluator:
         t = self.after_infer()
 
         # save json
-        pred_json = str(self.save_dir / f"predictions.json")  # predictions json
-        print(f"\nEvaluating pycocotools mAP... saving {pred_json}...")
-        with open(pred_json, "w") as f:
-            json.dump(self.jdict, f)
+        if self.save_dir.exists() and save_json:
+            pred_json = str(self.save_dir / f"predictions.json")  # predictions json
+            print(f"\nEvaluating pycocotools mAP... saving {pred_json}...")
+            with open(pred_json, "w") as f:
+                json.dump(self.jdict, f)
 
         # Print speeds
         shape = (batch_size, 3, imgsz, imgsz)
