@@ -58,10 +58,22 @@ pip install -e .
 <details open>
 <summary>Training</summary>
 
+Prepare your objection labels like [yolov5](https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data) to train objection:
 - training objection
 ```shell
 python tools/train.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt --epochs 50 --batch-size 8
 ```
+
+Prepare your mask labels like below to train instance segmentation:
+```shell
+0 x1 y1 x2 y2 x3 y3 ...
+1 x1 y1 x2 y2 x3 y3 x4 y4 x5 y5...
+2 x1 y1 x2 y2 x3 y3 x4 y4...
+.
+.
+.
+```
+you can also check the [coco-segment](https://github.com/ultralytics/yolov5/releases/download/v1.0/coco2017labels-segments.zip) labels from official yolov5 or my test dataset [balloon](https://github.com/Laughing-q/yolov5-q/releases/download/0.1.0/balloon.zip).
 
 - training segmentation
 ```shell

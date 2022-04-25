@@ -380,18 +380,18 @@ class LoadImagesAndLabels(Dataset):
         """Get negative pictures and background pictures."""
         img_neg_files, img_bg_files = [], []
         if os.path.isdir(neg_dir):
+            img_neg_files = [os.path.join(neg_dir, i) for i in os.listdir(neg_dir)]
             logging.info(
                 colorstr("Negative dir: ")
-                + f"'{neg_dir}', using {len(neg_dir)} pictures from the dir as negative samples during training"
+                + f"'{neg_dir}', using {len(img_neg_files)} pictures from the dir as negative samples during training"
             )
-            img_neg_files = [os.path.join(neg_dir, i) for i in os.listdir(neg_dir)]
 
         if os.path.isdir(bg_dir):
+            img_bg_files = [os.path.join(bg_dir, i) for i in os.listdir(bg_dir)]
             logging.info(
                 colorstr("Background dir: ")
-                + f"{bg_dir}, using {len(bg_dir)} pictures from the dir as background during training"
+                + f"{bg_dir}, using {len(img_bg_files)} pictures from the dir as background during training"
             )
-            img_bg_files = [os.path.join(bg_dir, i) for i in os.listdir(bg_dir)]
         return img_neg_files, img_bg_files
 
     def load_cache(self, cache_path, prefix):

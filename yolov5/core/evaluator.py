@@ -211,7 +211,11 @@ class Yolov5Evaluator:
 
                 # get predition masks
                 proto_out = train_out[1][si] if isinstance(train_out, tuple) else None
-                pred_maski = self.get_predmasks(pred, proto_out, gt_masksi.shape[1:])
+                pred_maski = self.get_predmasks(
+                    pred,
+                    proto_out,
+                    gt_masksi.shape[1:] if gt_masksi is not None else None,
+                )
 
                 # for visualization
                 if self.plots and batch_i < 3 and pred_maski is not None:
