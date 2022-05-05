@@ -4,8 +4,10 @@ Logging utils
 """
 
 import os
+import sys
 import warnings
 from threading import Thread
+from loguru import logger
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -28,13 +30,11 @@ class NewLoggers:
     def __init__(
         self,
         save_dir=None,
-        opt=None,
-        logger=None,
+        rank=0,
         include=LOGGERS,
     ):
+        self.setup_logger(rank)
         self.save_dir = save_dir
-        self.opt = opt
-        self.logger = logger  # for printing results to console
         self.include = include
         self.keys = [
             "train/box_loss",
@@ -66,10 +66,32 @@ class NewLoggers:
         s = self.save_dir
         if "tb" in self.include and s.exists():
             prefix = colorstr("TensorBoard: ")
-            self.logger.info(
+            logger.info(
                 f"{prefix}Start with 'tensorboard --logdir {s.parent}', view at http://localhost:6006/"
             )
             self.tb = SummaryWriter(str(s))
+
+    def setup_logger(distributed_rank=0):
+        """setup logger for training and testing.
+        Args:
+            distributed_rank(int): device rank when multi-gpu environment
+
+        Return:
+            logger instance.
+        """
+        loguru_format = (
+            "<level>{message}</level>"
+        )
+
+        logger.remove()
+        # only keep logger in rank0 process
+        if distributed_rank == 0:
+            logger.add(
+                sys.stderr,
+                format=loguru_format,
+                level="INFO",
+                enqueue=True,
+            )
 
     def on_pretrain_routine_end(self):
         pass

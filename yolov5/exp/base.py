@@ -13,28 +13,24 @@ class BaseExp(metaclass=ABCMeta):
 
     def __init__(self):
         self.seed = None
-        self.output_dir = "./YOLOX_outputs"
-        self.print_interval = 100
-        self.eval_interval = 10
+        self.output_dir = "./runs"
 
-    @abstractmethod
-    def get_model(self) -> Module:
-        pass
+    # @abstractmethod
+    # def get_model(self) -> Module:
+    #     pass
 
     @abstractmethod
     def get_data_loader(
-        self, batch_size: int, is_distributed: bool
+        self, batch_size: int, rank: int
     ) -> Dict[str, torch.utils.data.DataLoader]:
         pass
 
     @abstractmethod
-    def get_optimizer(self, batch_size: int) -> torch.optim.Optimizer:
+    def set_logger(self, rank: int):
         pass
 
     @abstractmethod
-    def get_lr_scheduler(
-        self, lr: float, iters_per_epoch: int, **kwargs
-    ):
+    def get_loss(self, batch_size: int):
         pass
 
     @abstractmethod

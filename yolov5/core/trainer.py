@@ -647,7 +647,7 @@ class Trainer:
             return
         newloggers = NewLoggersMask if self.mask else NewLoggers
         loggers = newloggers(
-            save_dir=self.save_dir, opt=self.opt, logger=self.logger
+            save_dir=self.save_dir, logger=self.logger
         )  # loggers instance
 
         # Register actions
