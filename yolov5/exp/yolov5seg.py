@@ -75,7 +75,8 @@ class Yolov5SegExp(Yolov5Exp):
             return
         callbacks = Callbacks()
         loggers = NewLoggersMask(
-            save_dir=save_dir, rank=rank,
+            save_dir=save_dir,
+            rank=rank,
         )  # loggers instance
 
         # Register actions

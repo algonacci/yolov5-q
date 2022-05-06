@@ -27,7 +27,7 @@ dataloader, dataset = create_dataloader(
             # '/d/baidubase/COCO/val_yolo/images/train',
             # 'data/license_plates/images/train/',
             # '/d/projects/research/yolov5/data/coco/train2017.txt',
-            '/d/projects/research/yolov5/data/coco/val2017.txt',
+            '/home/laughing/code/yolov5-q/data/balloon/images/train',
             # "/home/laughing/code/yolov5-6/data/seg/coco_02/images/train",
             imgsz=640,
             batch_size=4,
