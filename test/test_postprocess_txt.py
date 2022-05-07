@@ -16,8 +16,13 @@ from yolov5.utils.plots import Visualizer
 class TestPost:
     def __init__(self, preds=[]) -> None:
         self.stride = [8, 16, 32]
-        self.preds = [torch.from_numpy(np.load(p)) for p in preds]
+        # self.preds = [torch.from_numpy(np.load(p)) for p in preds]
+        self.preds = preds
         self.nl = len(self.preds)
+        # for i in range(self.nl):
+        #     b, h, w, _ = self.preds[i].shape
+        #     self.preds[i] = self.preds[i].reshape((b, h, w, 3, 10)).permute(0, 3, 1, 2, 4)
+
         self.na = self.preds[0].shape[1]
         self.no = self.preds[0].shape[-1]
 
@@ -34,7 +39,6 @@ class TestPost:
             .float()
             .view(self.nl, -1, 2)
         )
-        self.vis = Visualizer(names=list(range(self.no - 5)))
 
     def __call__(self):
         z = []
@@ -64,24 +68,49 @@ class TestPost:
 
 
 if __name__ == "__main__":
-    preds = [
-        "./outputs_int8/147.npy",
-        "./outputs_int8/148.npy",
-        "./outputs_int8/149.npy",
-    ]
     # preds = [
-    #     "./outputs_fp32/147.npy",
-    #     "./outputs_fp32/148.npy",
-    #     "./outputs_fp32/149.npy",
+    #     "./temp1/0.npy",
+    #     "./temp1/1.npy",
+    #     "./temp1/2.npy",
     # ]
-    test = TestPost(preds=preds)
+    # preds = [
+    #     "./temp2/0.npy",
+    #     "./temp2/1.npy",
+    #     "./temp2/2.npy",
+    # ]
+
+    output1 = np.loadtxt('/home/laughing/_1_3_52_96_32.txt')
+    output1 = output1.reshape((1, 3, 52, 96, 32))
+    output1 = torch.from_numpy(output1)
+
+    output2 = np.loadtxt('/home/laughing/_1_3_26_48_32.txt')
+    output2 = output2.reshape((1, 3, 26, 48, 32))
+    output2 = torch.from_numpy(output2)
+
+    output3 = np.loadtxt('/home/laughing/_1_3_13_24_32.txt')
+    output3 = output3.reshape((1, 3, 13, 24, 32))
+    output3 = torch.from_numpy(output3)
+
+    # output1 = np.loadtxt('/home/laughing/1_3_20_20_85_.txt')
+    # output1 = output1.reshape((1, 3, 20, 20, 85))
+    # output1 = torch.from_numpy(output1)
+    #
+    # output2 = np.loadtxt('/home/laughing/1_3_40_40_85_.txt')
+    # output2 = output2.reshape((1, 3, 40, 40, 85))
+    # output2 = torch.from_numpy(output2)
+    #
+    # output3 = np.loadtxt('/home/laughing/1_3_80_80_85_.txt')
+    # output3 = output3.reshape((1, 3, 80, 80, 85))
+    # output3 = torch.from_numpy(output3)
+
+    test = TestPost(preds=[output1, output2, output3])
+    vis = Visualizer(names=list(range(80)))
     output = test()
     print(output.shape)
-    output = non_max_suppression(output, conf_thres=0.1)
+    output = non_max_suppression(output, conf_thres=0.2)
     print(output)
 
-    name = "bus.jpg"
-    img = cv2.imread(f"./test_imgs/{name}")
+    img = cv2.imread('/home/laughing/code/yolov5-q/test/test_imgs/bus.jpg')
 
     for i, det in enumerate(output):  # detections per image
         if det is None or len(det) == 0:
@@ -89,7 +118,7 @@ if __name__ == "__main__":
         det[:, :4] = scale_coords((416, 768), det[:, :4], img.shape[:2]).round()
 
     print(output)
-    img = test.vis(img, output, vis_confs=0.0)
-    # cv2.imwrite(f'int8/{name}', img)
+    img = vis(img, output, vis_confs=0.0)
+    # cv2.imshow('p', cv2.resize(img, (1280, 704)))
     cv2.imshow('p', img)
     cv2.waitKey(0)

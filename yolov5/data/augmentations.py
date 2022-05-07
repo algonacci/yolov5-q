@@ -175,8 +175,14 @@ class RandomPerspective:
             )  # perspective rescale or affine
 
             # clip
-            xy[:, 0] = xy[:, 0].clip(0, width)
-            xy[:, 1] = xy[:, 1].clip(0, height)
+            # NOTE: abandon the coords beyond width or height
+            xy = np.where(xy < 0, -1, xy)
+            xy[:, 0] = np.where(xy[:, 0] > width, -1, xy[:, 0])
+            xy[:, 1] = np.where(xy[:, 1] > height, -1, xy[:, 1])
+            xy[:, 0] = np.where(xy[:, 1] == -1, -1, xy[:, 0])
+            xy[:, 1] = np.where(xy[:, 0] == -1, -1, xy[:, 1])
+            # xy[:, 0] = xy[:, 0].clip(0, width)
+            # xy[:, 1] = xy[:, 1].clip(0, height)
             new_keypoints.append(xy)
         new_keypoints = (
             np.stack(new_keypoints, axis=0)
@@ -219,7 +225,7 @@ class RandomPerspective:
         if len(keypoints):
             new_keypoints = self.apply_affine_to_keypoints(keypoints, width, height, M)
             new_keypoints = new_keypoints[i]
-            targets["keypoints"] = new_segments
+            targets["keypoints"] = new_keypoints
 
         labels = labels[i]
         labels[:, 1:5] = new_bboxes[i]

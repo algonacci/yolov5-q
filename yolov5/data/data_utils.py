@@ -46,6 +46,7 @@ for orientation in ExifTags.TAGS.keys():
     if ExifTags.TAGS[orientation] == "Orientation":
         break
 
+
 def get_hash(paths):
     # Returns a single hash value of a list of paths (files or dirs)
     size = sum(os.path.getsize(p) for p in paths if os.path.exists(p))  # sizes
@@ -103,10 +104,7 @@ def polygon2mask(img_size, polygons, color=1, downsample_ratio=1):
         polygons (np.ndarray): [N, M], N is the number of polygons,
             M is the number of points(Be divided by 2).
     """
-    img_size = (
-            img_size[0] // downsample_ratio, 
-            img_size[1] // downsample_ratio
-            )
+    img_size = (img_size[0] // downsample_ratio, img_size[1] // downsample_ratio)
     mask = np.zeros(img_size, dtype=np.uint8)
     polygons = np.asarray(polygons) / downsample_ratio
     polygons = polygons.astype(np.int32)
@@ -136,12 +134,10 @@ def polygon2mask_downsample(img_size, polygons, color=1, downsample_ratio=1):
     shape = polygons.shape
     polygons = polygons.reshape(shape[0], -1, 2)
     cv2.fillPoly(mask, polygons, color=color)
-    nh, nw = (
-            img_size[0] // downsample_ratio, 
-            img_size[1] // downsample_ratio
-            )
+    nh, nw = (img_size[0] // downsample_ratio, img_size[1] // downsample_ratio)
     mask = cv2.resize(mask, (nw, nh))
     return mask
+
 
 def img2label_paths(img_paths):
     # Define label paths as a function of image paths
@@ -165,6 +161,7 @@ def flatten_recursive(path="../datasets/coco128"):
     create_folder(new_path)
     for file in tqdm(glob.glob(str(Path(path)) + "/**/*.*", recursive=True)):
         shutil.copyfile(file, new_path / Path(file).name)
+
 
 def extract_boxes(
     path="../datasets/coco128",
@@ -257,17 +254,18 @@ def autosplit(
 def verify_image_label(args):
     # Verify one image-label pair
     im_file, lb_file, prefix, mode = args
-    assert mode in ['bboxes', 'segments', 'keypoints']
-    nm, nf, ne, nc, msg, segments = (
+    assert mode in ["bboxes", "segments", "keypoints"]
+    nm, nf, ne, nc, msg, segments, keypoints = (
         0,
         0,
         0,
         0,
         "",
         [],
+        [],
     )  # number (missing, found, empty, corrupt), message, segments
     try:
-        # verify images
+    # verify images
         im = Image.open(im_file)
         im.verify()  # PIL verify
         shape = exif_size(im)  # image size
@@ -287,7 +285,8 @@ def verify_image_label(args):
             nf = 1  # label found
             with open(lb_file, "r") as f:
                 l = [x.split() for x in f.read().strip().splitlines() if len(x)]
-                if any([len(x) > 6 for x in l]):  # is segment
+                if any([len(x) > 6 for x in l]) and mode != "keypoints":  # is segment
+                # if mode == "segments":  # is segment
                     classes = np.array([x[0] for x in l], dtype=np.float32)
                     segments = [
                         np.array(x[1:], dtype=np.float32).reshape(-1, 2) for x in l
@@ -295,7 +294,12 @@ def verify_image_label(args):
                     l = np.concatenate(
                         (classes.reshape(-1, 1), segments2boxes(segments)), 1
                     )  # (cls, xywh)
-                l = np.array(l, dtype=np.float32)
+                elif mode == "keypoints":
+                    keypoints = np.array([x[5:] for x in l], dtype=np.float32).reshape(
+                        len(l), -1, 2
+                    ) # xyxy, (N, nl, 2)
+                    l = np.array([x[:5] for x in l], dtype=np.float32) # cls, xywh
+                l = np.asarray(l, dtype=np.float32)
             nl = len(l)
             if nl:
                 assert (
@@ -305,9 +309,12 @@ def verify_image_label(args):
                 assert (
                     l[:, 1:] <= 1
                 ).all(), f"non-normalized or out of bounds coordinates {l[:, 1:][l[:, 1:] > 1]}"
-                l, idx = np.unique(l, axis=0, return_index=True)  # remove duplicate rows
+                l, idx = np.unique(
+                    l, axis=0, return_index=True
+                )  # remove duplicate rows
                 # NOTE: `np.unique` will change the order of `l`, so adjust the segments order too.
                 segments = [segments[i] for i in idx] if len(segments) > 0 else segments
+                keypoints = keypoints[idx]
                 if len(l) < nl:
                     msg = f"{prefix}WARNING: {im_file}: {nl - len(l)} duplicate labels removed"
             else:
@@ -316,11 +323,11 @@ def verify_image_label(args):
         else:
             nm = 1  # label missing
             l = np.zeros((0, 5), dtype=np.float32)
-        return im_file, l, shape, segments, nm, nf, ne, nc, msg
+        return im_file, l, shape, segments, keypoints, nm, nf, ne, nc, msg
     except Exception as e:
         nc = 1
         msg = f"{prefix}WARNING: {im_file}: ignoring corrupt image/label: {e}"
-        return [None, None, None, None, nm, nf, ne, nc, msg]
+        return [None, None, None, None, None, nm, nf, ne, nc, msg]
 
 
 def verify_image_label_k(args):
@@ -365,7 +372,9 @@ def verify_image_label_k(args):
                 assert (
                     l[:, 1:] <= 1
                 ).all(), f"non-normalized or out of bounds coordinates {l[:, 1:][l[:, 1:] > 1]}"
-                l, idx = np.unique(l, axis=0, return_index=True)  # remove duplicate rows
+                l, idx = np.unique(
+                    l, axis=0, return_index=True
+                )  # remove duplicate rows
                 # NOTE: `np.unique` will change the order of `l`, so adjust the segments order too.
                 segments = [segments[i] for i in idx] if len(segments) > 0 else segments
                 if len(l) < nl:

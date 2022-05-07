@@ -150,13 +150,21 @@ def create_dataloader(
     area_thr=0.2,
     mask_head=False,
     mask_downsample_ratio=1,
+    keypoint=False,
 ):
     if rect and shuffle:
         print(
             "WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False"
         )
         shuffle = False
-    data_load = LoadImagesAndLabelsAndMasks if mask_head else LoadImagesAndLabels
+    # data_load = LoadImagesAndLabelsAndMasks if mask_head else LoadImagesAndLabels
+    if mask_head:
+        data_load = LoadImagesAndLabelsAndMasks
+    elif keypoint:
+        data_load = LoadImagesAndLabelsAndKeypoints
+    else:
+        data_load = LoadImagesAndLabels
+
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
     with torch_distributed_zero_first(rank):
         dataset = data_load(
@@ -303,11 +311,12 @@ class LoadImagesAndLabels(Dataset):
         cache_path = (
             p if p.is_file() else Path(self.label_files[0]).parent
         ).with_suffix(".cache")
-        labels, shapes, segments, img_files, label_files = self.load_cache(
+        labels, shapes, segments, keypoints, img_files, label_files = self.load_cache(
             cache_path, prefix
         )
 
         self.segments = segments
+        self.keypoints = keypoints
         self.labels = list(labels)
         self.shapes = np.array(shapes, dtype=np.float64)
         self.img_files = img_files  # update
@@ -346,7 +355,7 @@ class LoadImagesAndLabels(Dataset):
             perspective=hyp["perspective"],
             area_thr=self.area_thr,
         )
-        self.mode = 'bboxes'
+        self.mode = "bboxes"
 
     def cache_images(self, cache_images, prefix):
         """Cache images to disk or ram for faster speed."""
@@ -457,10 +466,10 @@ class LoadImagesAndLabels(Dataset):
 
         # Read cache
         [cache.pop(k) for k in ("hash", "version", "msgs")]  # remove items
-        labels, shapes, segments = zip(*cache.values())
+        labels, shapes, segments, keypoints = zip(*cache.values())
         img_files = list(cache.keys())  # update
         label_files = img2label_paths(cache.keys())  # update
-        return labels, shapes, segments, img_files, label_files
+        return labels, shapes, segments, keypoints, img_files, label_files
 
     def update_rect(self, num_batches, pad):
         """Update attr if rect is True."""
@@ -472,6 +481,7 @@ class LoadImagesAndLabels(Dataset):
         self.label_files = [self.label_files[i] for i in irect]
         self.labels = [self.labels[i] for i in irect]
         self.segments = [self.segments[i] for i in irect]
+        self.keypoints = [self.keypoints[i] for i in irect]
         self.shapes = s[irect]  # wh
         ar = ar[irect]
 
@@ -507,18 +517,34 @@ class LoadImagesAndLabels(Dataset):
             pbar = tqdm(
                 pool.imap(
                     verify_image_label,
-                    zip(self.img_files, self.label_files, repeat(prefix), repeat(self.mode)),
+                    zip(
+                        self.img_files,
+                        self.label_files,
+                        repeat(prefix),
+                        repeat(self.mode),
+                    ),
                 ),
                 desc=desc,
                 total=len(self.img_files),
             )
-            for im_file, l, shape, segments, nm_f, nf_f, ne_f, nc_f, msg in pbar:
+            for (
+                im_file,
+                l,
+                shape,
+                segments,
+                keypoints,
+                nm_f,
+                nf_f,
+                ne_f,
+                nc_f,
+                msg,
+            ) in pbar:
                 nm += nm_f
                 nf += nf_f
                 ne += ne_f
                 nc += nc_f
                 if im_file:
-                    x[im_file] = [l, shape, segments]
+                    x[im_file] = [l, shape, segments, keypoints]
                 if msg:
                     msgs.append(msg)
                 pbar.desc = (
@@ -562,7 +588,7 @@ class LoadImagesAndLabels(Dataset):
         mosaic = self.mosaic and random.random() < hyp["mosaic"]
         if mosaic:
             # Load mosaic
-            img, labels, _ = self.load_mosaic(index)
+            img, labels, _, _ = self.load_mosaic(index)
             shapes = None
 
             # MixUp augmentation
@@ -701,7 +727,7 @@ class LoadImagesAndLabels(Dataset):
     def load_mosaic(self, index):
         """generate mosaic image"""
         # YOLOv5 4-mosaic loader. Loads 1 image + 3 random images into a 4-image mosaic
-        labels4, segments4 = [], []
+        labels4, segments4, keypoints4 = [], [], []
         s = self.img_size
         yc, xc = [
             int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border
@@ -762,11 +788,12 @@ class LoadImagesAndLabels(Dataset):
 
             # TODO: deal with segments
             if len(self.img_bg_files) and temp_label is not None:
-                labels, segments = temp_label, []
+                labels, segments, keypoints = temp_label, [], []
             else:
-                labels, segments = (
+                labels, segments, keypoints = (
                     self.labels[index].copy(),
                     self.segments[index].copy(),
+                    self.keypoints[index].copy(),
                 )
 
             if labels.size:
@@ -774,12 +801,15 @@ class LoadImagesAndLabels(Dataset):
                     labels[:, 1:], w, h, padw, padh
                 )  # normalized xywh to pixel xyxy format
                 segments = [xyn2xy(x, w, h, padw, padh) for x in segments]
+                keypoints = [xyn2xy(x, w, h, padw, padh) for x in keypoints]
             labels4.append(labels)
             segments4.extend(segments)
+            keypoints4.append(keypoints)
 
         # Concat/clip labels
         labels4 = np.concatenate(labels4, 0)
-        for x in (labels4[:, 1:], *segments4):
+        keypoints4 = np.concatenate(keypoints4, 0)
+        for x in (labels4[:, 1:], *keypoints, *segments4):
             np.clip(x, 0, 2 * s, out=x)  # clip when using random_perspective()
         # img4, labels4 = replicate(img4, labels4)  # replicate
 
@@ -787,7 +817,7 @@ class LoadImagesAndLabels(Dataset):
         img4, labels4, segments4 = copy_paste(
             img4, labels4, segments4, p=self.hyp["copy_paste"]
         )
-        return img4, labels4, segments4
+        return img4, labels4, segments4, keypoints4
 
     def apply_affine(self, img, targets, border=(0, 0)):
         """Affine transformation"""
@@ -869,6 +899,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
         area_thr=0.2,
         downsample_ratio=1,  # return dowmsample mask
     ):
+        self.mode = "segments"
         super().__init__(
             path,
             img_size,
@@ -886,7 +917,6 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
             bg_dir,
             area_thr,
         )
-        self.mode = "segments"
         self.downsample_ratio = downsample_ratio
 
     @Dataset.mosaic_getitem
@@ -1005,7 +1035,13 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
 
-        return (torch.from_numpy(img), labels_out, self.img_files[index], shapes, masks)
+        return (
+            torch.from_numpy(img),
+            labels_out,
+            self.img_files[index],
+            shapes,
+            masks,
+        )
 
     def apply_affine(self, img, targets, border=(0, 0)):
         """Affine transformation"""
@@ -1021,6 +1057,7 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes, batched_masks
+
 
 class LoadImagesAndLabelsAndKeypoints(LoadImagesAndLabels):
     def __init__(
@@ -1041,6 +1078,7 @@ class LoadImagesAndLabelsAndKeypoints(LoadImagesAndLabels):
         bg_dir="",
         area_thr=0.2,
     ):
+        self.mode = "keypoints"
         super().__init__(
             path,
             img_size,
@@ -1058,7 +1096,6 @@ class LoadImagesAndLabelsAndKeypoints(LoadImagesAndLabels):
             bg_dir,
             area_thr,
         )
-        self.mode = "keypoints"
 
     @Dataset.mosaic_getitem
     def __getitem__(self, index):
@@ -1067,6 +1104,115 @@ class LoadImagesAndLabelsAndKeypoints(LoadImagesAndLabels):
         hyp = self.hyp
         self.mosaic = self.augment and not self.rect
         mosaic = self.mosaic and random.random() < hyp["mosaic"]
+        if mosaic:
+            # Load mosaic
+            img, labels, _, keypoints = self.load_mosaic(index)
+            shapes = None
+
+            # TODO: Mixup not support segment for now
+            # MixUp augmentation
+            if random.random() < hyp["mixup"]:
+                img, labels = mixup(
+                    img,
+                    labels,
+                    *self.load_mosaic(random.randint(0, self.num_imgs - 1)),
+                )
+            targets = {"labels": labels, "keypoints": keypoints}
+            img, labels, keypoints = self.apply_affine(img, targets, self.mosaic_border)
+        else:
+            # Load image
+            img, (h0, w0), (h, w) = self.load_image(index)
+
+            # Letterbox
+            shape = (
+                self.batch_shapes[self.batch_index[index]]
+                if self.rect
+                else self.img_size
+            )  # final letterboxed shape
+            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+            shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
+
+            labels = self.labels[index].copy()
+            keypoints = self.keypoints[index].copy()
+            if labels.size:  # normalized xywh to pixel xyxy format
+                labels[:, 1:] = xywhn2xyxy(
+                    labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1]
+                )
+            if keypoints.size:
+                for ik in range(len(keypoints)):
+                    keypoints[ik] = xyn2xy(
+                        keypoints[ik],
+                        ratio[0] * w,
+                        ratio[1] * h,
+                        padw=pad[0],
+                        padh=pad[1],
+                    )
+            if self.augment:
+                targets = {"labels": labels, "keypoints": keypoints}
+                img, labels, keypoints = self.apply_affine(img, targets)
+
+        nl = len(labels)  # number of labels
+        if nl:
+            labels[:, 1:5] = xyxy2xywhn(
+                labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1e-3
+            )
+            keypoints[:, :, 0] = keypoints[:, :, 0] / img.shape[1]
+            keypoints[:, :, 1] = keypoints[:, :, 1] / img.shape[0]
+
+        if self.augment:
+            # TODO: support albumentations
+            # Albumentations
+            img, labels = self.albumentations(img, labels)
+            nl = len(labels)  # update after albumentations
+
+            # HSV color-space
+            augment_hsv(img, hgain=hyp["hsv_h"], sgain=hyp["hsv_s"], vgain=hyp["hsv_v"])
+
+            # Flip up-down
+            if random.random() < hyp["flipud"]:
+                img = np.flipud(img)
+                if nl:
+                    labels[:, 2] = 1 - labels[:, 2]
+                    keypoints[:, :, 1] = 1 - keypoints[:, :, 1]
+
+            # Flip left-right
+            if random.random() < hyp["fliplr"]:
+                img = np.fliplr(img)
+                if nl:
+                    labels[:, 1] = 1 - labels[:, 1]
+                    keypoints[:, :, 0] = 1 - keypoints[:, :, 0]
+
+            # Cutouts
+            # labels = cutout(img, labels, p=0.5)
+
+        labels_out = torch.zeros((nl, 6))
+        if nl:
+            labels_out[:, 1:] = torch.from_numpy(labels)
+
+        # Convert
+        img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
+        img = np.ascontiguousarray(img)
+
+        return (
+            torch.from_numpy(img),
+            labels_out,
+            self.img_files[index],
+            shapes,
+            torch.from_numpy(keypoints),
+        )
+
+    def apply_affine(self, img, targets, border=(0, 0)):
+        """Affine transformation"""
+        img, targets = self.random_perspective(img, targets, border)
+        return img, targets["labels"], targets["keypoints"]
+
+    @staticmethod
+    def collate_fn(batch):
+        img, label, path, shapes, keypoints = zip(*batch)  # transposed
+        batch_keypoints = torch.cat(keypoints, 0)
+        for i, l in enumerate(label):
+            l[:, 0] = i  # add target image index for build_targets()
+        return torch.stack(img, 0), torch.cat(label, 0), path, shapes, batch_keypoints
 
 
 # Ancillary functions --------------------------------------------------------------------------------------------------
