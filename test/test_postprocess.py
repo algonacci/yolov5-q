@@ -69,14 +69,18 @@ if __name__ == "__main__":
         "./outputs_int8/148.npy",
         "./outputs_int8/149.npy",
     ]
-    # preds = [
-    #     "./outputs_fp32/147.npy",
-    #     "./outputs_fp32/148.npy",
-    #     "./outputs_fp32/149.npy",
-    # ]
+    # # preds = [
+    # #     "./outputs_fp32/147.npy",
+    # #     "./outputs_fp32/148.npy",
+    # #     "./outputs_fp32/149.npy",
+    # # ]
     test = TestPost(preds=preds)
     output = test()
-    print(output.shape)
+    # print(output.shape)
+
+    # output = np.loadtxt('/home/laughing/_1_19656_213.txt')
+    # output = output.reshape(1, 19656, 213)
+    # output = torch.from_numpy(output)
     output = non_max_suppression(output, conf_thres=0.1)
     print(output)
 

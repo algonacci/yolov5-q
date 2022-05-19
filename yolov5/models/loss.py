@@ -372,19 +372,6 @@ class ComputeLoss:
         loss = lbox + lobj + lcls + lseg
         return loss * bs, torch.cat((lbox, lseg, lobj, lcls)).detach()
 
-    def single_mask_loss(self, gt_mask, pred, proto, xyxy, w, h):
-        """mask loss of single pic."""
-        # (80, 80, 32) @ (32, n) -> (80, 80, n)
-        pred_mask = proto @ pred.tanh().T
-        lseg = F.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction="none")
-        lseg = crop(lseg, xyxy)
-        lseg = lseg.mean(dim=(0, 1)) / w / h
-        return lseg.mean()
-
-    def mask_loss(self, gt_masks, preds, protos, xyxys, ws, hs):
-        """mask loss of batches."""
-        pass
-
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
         na, nt = self.na, targets.shape[0]  # number of anchors, targets

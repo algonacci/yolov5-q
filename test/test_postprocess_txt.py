@@ -79,16 +79,16 @@ if __name__ == "__main__":
     #     "./temp2/2.npy",
     # ]
 
-    output1 = np.loadtxt('/home/laughing/_1_3_52_96_32.txt')
-    output1 = output1.reshape((1, 3, 52, 96, 32))
+    output1 = np.loadtxt('/home/laughing/_1_3_52_96_213.txt')
+    output1 = output1.reshape((1, 3, 52, 96, 213))
     output1 = torch.from_numpy(output1)
 
-    output2 = np.loadtxt('/home/laughing/_1_3_26_48_32.txt')
-    output2 = output2.reshape((1, 3, 26, 48, 32))
+    output2 = np.loadtxt('/home/laughing/_1_3_26_48_213.txt')
+    output2 = output2.reshape((1, 3, 26, 48, 213))
     output2 = torch.from_numpy(output2)
 
-    output3 = np.loadtxt('/home/laughing/_1_3_13_24_32.txt')
-    output3 = output3.reshape((1, 3, 13, 24, 32))
+    output3 = np.loadtxt('/home/laughing/_1_3_13_24_213.txt')
+    output3 = output3.reshape((1, 3, 13, 24, 213))
     output3 = torch.from_numpy(output3)
 
     # output1 = np.loadtxt('/home/laughing/1_3_20_20_85_.txt')
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     # output3 = torch.from_numpy(output3)
 
     test = TestPost(preds=[output1, output2, output3])
-    vis = Visualizer(names=list(range(80)))
+    vis = Visualizer(names=list(range(1000)))
     output = test()
     print(output.shape)
     output = non_max_suppression(output, conf_thres=0.2)
