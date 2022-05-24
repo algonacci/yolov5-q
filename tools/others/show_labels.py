@@ -58,6 +58,7 @@ cv2.namedWindow("mosaic", cv2.WINDOW_NORMAL)
 # keypoint test
 for i, (imgs, targets, paths, _, keypoints) in enumerate(dataloader):
     result = plot_images_keypoints(images=imgs, targets=targets, keypoints=keypoints, paths=paths)
+    print(keypoints.shape)
     cv2.imshow("mosaic", result[:, :, ::-1])
     if cv2.waitKey(0) == ord("q"):  # q to quit
         break

@@ -31,6 +31,7 @@
 - [ ] looks like `plot_masks` will make image blur
 - [ ] plot_images bug
 - [ ] tensorrt export
+- [ ] loss
 - [o] review
   - [ ] loss
   - [X] dataloader

@@ -1,0 +1,55 @@
+MODEL:
+  PATH: "configs/original/yolov5s.yaml"
+  PRETRAIN: "weights/yolov5s.pt"
+  MASK_ON: false
+  MASK_RATIO: 4
+  KEYPOINT_ON: false
+DATA: 
+  PATH: "coco.yaml"
+  NEG_DIR: ""
+  BG_DIR: ""
+  IMG_SIZE: [640, 640]
+  RECT: false
+  IMAGE_WEIGHTS: false
+  TRANSFORM:
+    HSV_H: 0.015  # image HSV-Hue augmentation (fraction)
+    HSV_S: 0.7  # image HSV-Saturation augmentation (fraction)
+    HSV_V: 0.4  # image HSV-Value augmentation (fraction)
+    DEGREES: 0.0  # image rotation (+/- deg)
+    TRANSLATE: 0.1  # image translation (+/- fraction)
+    SCALE: 0.5  # image scale (+/- gain)
+    SHEAR: 0.0  # image shear (+/- deg)
+    PERSPECTIVE: 0.0  # image perspective (+/- fraction), range 0-0.001
+    FLIPUD: 0.0  # image flip up-down (probability)
+    FLIPLR: 0.5  # image flip left-right (probability)
+    MOSAIC: 1.0  # image mosaic (probability)
+    MIXUP: 0.0  # image mixup (probability)
+    COPY_PASTE: 0.0  # segment copy-paste (probability)
+    AREA_THR: 0.2
+SLOVER:
+  BASE_LR: 0.01
+  LRF: 0.1
+  MOMENTUM: 0.937  # SGD momentum/Adam beta1
+  WEIGHT_DECAY: 0.0005  # optimizer weight decay 5e-4
+  WARMUP_EPOCHS: 3.0  # warmup epochs (fractions ok)
+  WARMUP_MOMENTUM: 0.8  # warmup initial momentum
+  WARMUP_BIAS_LR: 0.1  # warmup initial bias lr
+
+  BATCH_SIZE_PER_GPU: 8
+  NORMAL_BATCH_SIZE: 64
+  NO_AUG_EPOCH: 15
+  NUM_EPOCH: 300
+  MULTI_SCALE: false
+  SINGLE_CLS: false
+HYP:
+  BOX: 0.05  # box loss gain
+  CLS: 0.5  # cls loss gain
+  CLS_PW: 1.0  # cls BCELoss positive_weight
+  OBJ: 1.0  # obj loss gain (scale with pixels)
+  OBJ_PW: 1.0  # obj BCELoss positive_weight
+  IOU_T: 0.20  # IoU training threshold
+  ANCHOR_T: 4.0  # anchor-multiple threshold
+NUM_WORKERS: 8
+OUTPUT: "runs/test"
+RESUME_DIR: ""
+EXIST_OK: false
