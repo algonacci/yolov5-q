@@ -1,9 +1,11 @@
 MODEL:
+  # NOTE: normally just use PRETRAIN rather than PATH, unless you need a new model architecture or override anchor
   PATH: "configs/original/yolov5s.yaml"
-  PRETRAIN: "weights/yolov5s.pt"
+  PRETRAIN: "weights/yolov5s.pt"  
   MASK_ON: false
   MASK_RATIO: 4
   KEYPOINT_ON: false
+  SINGLE_CLS: false
 DATA: 
   PATH: "coco.yaml"
   NEG_DIR: ""
@@ -40,7 +42,6 @@ SLOVER:
   NO_AUG_EPOCH: 15
   NUM_EPOCH: 300
   MULTI_SCALE: false
-  SINGLE_CLS: false
 HYP:
   BOX: 0.05  # box loss gain
   CLS: 0.5  # cls loss gain
