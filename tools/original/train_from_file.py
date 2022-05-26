@@ -33,7 +33,7 @@ import val  # for end-of-epoch mAP
 from yolov5.models.experimental import attempt_load
 from yolov5.models.yolo import Model
 from yolov5.utils.autoanchor import check_anchors
-from yolov5.data import create_dataloader, create_dataloader_ori
+from yolov5.data import create_dataloader
 from yolov5.utils.general import (
     labels_to_class_weights,
     increment_path,
@@ -303,7 +303,7 @@ def train(hyp, opt, device, callbacks):  # path/to/hyp.yaml or hyp dictionary
 
     # Process 0
     if RANK in [-1, 0]:
-        val_loader = create_dataloader_ori(
+        val_loader = create_dataloader(
             val_path,
             imgsz,
             batch_size // WORLD_SIZE * 2,

@@ -10,7 +10,7 @@ DATA:
   PATH: "coco.yaml"
   NEG_DIR: ""
   BG_DIR: ""
-  IMG_SIZE: [640, 640]
+  IMG_SIZE: 640
   RECT: false
   IMAGE_WEIGHTS: false
   TRANSFORM:
@@ -28,14 +28,16 @@ DATA:
     MIXUP: 0.0  # image mixup (probability)
     COPY_PASTE: 0.0  # segment copy-paste (probability)
     AREA_THR: 0.2
-SLOVER:
+SOLVER:
   BASE_LR: 0.01
-  LRF: 0.1
   MOMENTUM: 0.937  # SGD momentum/Adam beta1
   WEIGHT_DECAY: 0.0005  # optimizer weight decay 5e-4
   WARMUP_EPOCHS: 3.0  # warmup epochs (fractions ok)
   WARMUP_MOMENTUM: 0.8  # warmup initial momentum
   WARMUP_BIAS_LR: 0.1  # warmup initial bias lr
+
+  LRF: 0.1
+  LR_SCHEDULER: "linear"  # linear or cosine
 
   BATCH_SIZE_PER_GPU: 8
   NORMAL_BATCH_SIZE: 64
@@ -50,6 +52,8 @@ HYP:
   OBJ_PW: 1.0  # obj BCELoss positive_weight
   IOU_T: 0.20  # IoU training threshold
   ANCHOR_T: 4.0  # anchor-multiple threshold
+  LABEL_SMOOTHING: 0.0
+  FL_GAMMA: 0.0
 NUM_WORKERS: 8
 OUTPUT: "runs/test"
 RESUME_DIR: ""

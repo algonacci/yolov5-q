@@ -19,7 +19,6 @@ from ..utils.general import make_divisible, print_args, set_logging
 from ..utils.checker import check_yaml
 from ..utils.plots import feature_visualization
 from ..utils.torch_utils import (
-    copy_attr,
     fuse_conv_and_bn,
     initialize_weights,
     model_info,
@@ -364,14 +363,6 @@ class Model(nn.Module):
                 m.forward = m.forward_fuse  # update forward
         self.info()
         return self
-
-    def autoshape(self):  # add AutoShape module
-        LOGGER.info("Adding AutoShape... ")
-        m = AutoShape(self)  # wrap model
-        copy_attr(
-            m, self, include=("yaml", "nc", "hyp", "names", "stride"), exclude=()
-        )  # copy attributes
-        return m
 
     def info(self, verbose=False, img_size=640):  # print model information
         model_info(self, verbose, img_size)

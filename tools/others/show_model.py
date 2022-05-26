@@ -5,6 +5,7 @@ import torch
 from yolov5.utils.general import print_args
 from yolov5.utils.checker import check_yaml
 from yolov5.utils.torch_utils import select_device
+from yolov5.models.architecture.yolo_pafpn import YOLOPAFPN
 
 FILE = Path(__file__).resolve()
 
@@ -12,14 +13,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--cfg', type=str, default='yolov5n_seg.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--profile', action='store_true', default=True, help='profile model speed')
+    parser.add_argument('--profile', action='store_true', default=False, help='profile model speed')
     opt = parser.parse_args()
     opt.cfg = check_yaml(opt.cfg)  # check YAML
     print_args(FILE.stem, opt)
     device = select_device(opt.device)
 
+    img = torch.rand(1, 3, 640, 640)
+    model = YOLOPAFPN(1, 1)
+    print(model)
+    for output in model(img):
+        print(output.shape)
+    exit()
     # Create model
     model = Model(opt.cfg).to(device)
+    print(model)
 
     # for k, m in model.named_modules():
     # # for k, m in model.named_children():
