@@ -6,6 +6,8 @@ from lqcv.utils.general import colorstr
 from loguru import logger
 from copy import deepcopy
 import os.path as osp
+import random
+import math
 import os
 from ..utils.logger import setup_logger
 from ..utils.dist import get_rank, get_world_size
@@ -190,10 +192,12 @@ class Trainer:
         self.model = model
         self.model.train()
 
+        # stride for dataset and multi-scale training
+        self.stride = max(int(self.model.stride.max()), 32)
         train_dataset = build_datasets(
             self.cfg,
             self.data_dict["train"],
-            stride=max(int(self.model.stride.max()), 32),
+            stride=self.stride,
             rank=self.rank,
             mode="train",
         )
@@ -250,6 +254,44 @@ class Trainer:
             self.before_epoch()
             self.train_in_iter()
             self.after_epoch()
+
+    def train_in_iter(self):
+        for self.iter, (imgs, targets, paths, _, masks) in self.pbar:
+            imgs = (
+                imgs.to(self.device, non_blocking=True).float() / 255.0
+            )  # uint8 to float32, 0-255 to 0.0-1.0
+
+            # Warmup
+            if self.progress_in_iter <= self.warmup_iters:
+                self._warmup()
+
+            # Multi-scale
+            if self.opt.multi_scale:
+                imgs = self._multi_scale(imgs)
+            # Forward
+            with amp.autocast(enabled=self.cuda):
+                pred = self.model(imgs)  # forward
+                loss, loss_items = self.compute_loss(
+                    pred,
+                    targets.to(self.device),
+                    masks=masks.to(self.device) if self.mask else masks,
+                )  # loss scaled by batch_size
+                if self.is_distributed:
+                    loss *= (
+                        get_world_size()
+                    )  # gradient averaged between devices in DDP mode
+
+            # Backward
+            self.scaler.scale(loss).backward()
+
+            # Optimize
+            if self.progress_in_iter - self.last_opt_step >= self.accumulate:
+                self.scaler.step(self.optimizer)  # optimizer.step
+                self.scaler.update()
+                self.optimizer.zero_grad()
+                if self.ema:
+                    self.ema.update(self.model)
+                self.last_opt_step = self.progress_in_iter
 
     def before_epoch(self):
         nloss = 4 if self.mask else 3  #  (obj, cls, box, [seg])
@@ -354,3 +396,42 @@ class Trainer:
         if best:
             torch.save(ckpt, self.best)
         del ckpt
+
+    def _warmup(self):
+        xi = [0, self.warmup_iters]  # x interp
+        self.accumulate = max(
+            1,
+            np.interp(
+                self.global_iter, xi, [1, self.normal_batch_size / self.batch_size]
+            ).round(),
+        )
+        for j, x in enumerate(self.optimizer.param_groups):
+            # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
+            x["lr"] = np.interp(
+                self.global_iter,
+                xi,
+                [
+                    self.hyp.WARMUP_BIAS_LR if j == 2 else 0.0,
+                    x["initial_lr"] * self.lf(self.epoch),
+                ],
+            )
+            if "momentum" in x:
+                x["momentum"] = np.interp(
+                    self.global_iter, xi, [self.hyp.WARMUP_MOMENTUM, self.hyp.MOMENTUM]
+                )
+
+    def _multi_scale(self, imgs):
+        sz = (
+            random.randrange(self.img_size * 0.5, self.img_size * 1.5 + self.stride)
+            // self.stride
+            * self.stride
+        )  # size
+        sf = sz / max(imgs.shape[2:])  # scale factor
+        if sf != 1:
+            ns = [
+                math.ceil(x * sf / self.stride) * self.stride for x in imgs.shape[2:]
+            ]  # new shape (stretched to gs-multiple)
+            imgs = nn.functional.interpolate(
+                imgs, size=ns, mode="bilinear", align_corners=False
+            )
+        return imgs
