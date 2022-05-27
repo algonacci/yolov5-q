@@ -655,7 +655,12 @@ class LoadImagesAndLabels(Dataset):
         img, label, path, shapes = zip(*batch)  # transposed
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(label, 0), path, shapes, None
+        data_item = {
+            "labels": torch.cat(label, 0),
+            "paths": path,
+            "shapes": shapes,
+        }
+        return torch.stack(img, 0), data_item
 
     @staticmethod
     def collate_fn4(batch):
@@ -882,7 +887,13 @@ class LoadImagesAndLabelsAndMasks(LoadImagesAndLabels):  # for training/testing
         # print('batched_masks:', (batched_masks > 0).sum())
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(label, 0), path, shapes, batched_masks
+        data_item = {
+            "labels": torch.cat(label, 0),
+            "paths": path,
+            "shapes": shapes,
+            "masks": batched_masks,
+        }
+        return torch.stack(img, 0), data_item
 
 
 class LoadImagesAndLabelsAndKeypoints(LoadImagesAndLabels):
@@ -1038,7 +1049,13 @@ class LoadImagesAndLabelsAndKeypoints(LoadImagesAndLabels):
         batch_keypoints = torch.cat(keypoints, 0)
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(label, 0), path, shapes, batch_keypoints
+        data_item = {
+            "labels": torch.cat(label, 0),
+            "paths": path,
+            "shapes": shapes,
+            "keypoints": batch_keypoints,
+        }
+        return torch.stack(img, 0), data_item
 
 
 # Ancillary functions --------------------------------------------------------------------------------------------------

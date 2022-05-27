@@ -242,10 +242,18 @@ class ComputeLoss:
             if hasattr(det, k):
                 setattr(self, k, getattr(det, k))
 
-    def __call__(self, p, targets, masks=None):  # predictions, targets, model
+    def __call__(self, p, targets):  # predictions, targets, model
+        masks = targets.get("masks", None)
+        keypoints = targets.get("keypoints", None)
+        labels = targets["labels"]  # cls + bbox
+        labels = labels.to(p.device)
+        if keypoints is not None:
+            keypoints = keypoints.to(p.device)
+            return self.loss_keypoint(p, labels, keypoints)
         if masks is not None:
-            return self.loss_segment(p, targets, masks)
-        return self.loss_detection(p, targets)
+            masks = masks.to(p.device)
+            return self.loss_segment(p, labels, masks)
+        return self.loss_detection(p, labels)
 
     def loss_detection(self, p, targets):
         device = targets.device
@@ -311,7 +319,12 @@ class ComputeLoss:
         lcls *= self.hyp["cls"]
         bs = tobj.shape[0]  # batch size
 
-        return (lbox + lobj + lcls) * bs, torch.cat((lbox, lobj, lcls)).detach()
+        loss_items = {
+            "bbox": lbox,
+            "object": lobj,
+            "cls": lcls,
+        }
+        return (lbox + lobj + lcls) * bs, loss_items
 
     def loss_keypoint(self, p, targets, keypoints):
         device = targets.device
@@ -392,10 +405,16 @@ class ComputeLoss:
         lbox *= self.hyp["box"]
         lobj *= self.hyp["obj"]
         lcls *= self.hyp["cls"]
-        lkey *= self.hyp['landmark']
+        lkey *= self.hyp["landmark"]
         bs = tobj.shape[0]  # batch size
 
-        return (lbox + lobj + lcls) * bs, torch.cat((lbox, lkey, lobj, lcls)).detach()
+        loss_items = {
+            "bbox": lbox,
+            "keypoint": lkey,
+            "object": lobj,
+            "cls": lcls,
+        }
+        return (lbox + lobj + lcls) * bs, loss_items
 
     def loss_segment(self, preds, targets, masks):
         """
@@ -511,7 +530,13 @@ class ComputeLoss:
         bs = tobj.shape[0]  # batch size
 
         loss = lbox + lobj + lcls + lseg
-        return loss * bs, torch.cat((lbox, lseg, lobj, lcls)).detach()
+        loss_items = {
+            "bbox": lbox,
+            "masks": lseg,
+            "object": lobj,
+            "cls": lcls,
+        }
+        return loss * bs, loss_items
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)

@@ -252,17 +252,19 @@ def output_to_target(output):
 def plot_images(
     images,
     targets,
-    paths=None,
     fname="images.jpg",
     names=None,
     max_size=1920,
     max_subplots=16,
 ):
+    labels = targets["labels"]
+    path = targets["paths"]
+
     # Plot image grid with labels
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
-    if isinstance(targets, torch.Tensor):
-        targets = targets.cpu().numpy()
+    if isinstance(labels, torch.Tensor):
+        labels = labels.cpu().numpy()
     if np.max(images[0]) <= 1:
         images *= 255.0  # de-normalise (optional)
     bs, _, h, w = images.shape  # batch size, _, height, width
@@ -299,8 +301,8 @@ def plot_images(
                 text=Path(paths[i]).name[:40],
                 txt_color=(220, 220, 220),
             )  # filenames
-        if len(targets) > 0:
-            ti = targets[targets[:, 0] == i]  # image targets
+        if len(labels) > 0:
+            ti = labels[labels[:, 0] == i]  # image targets
             boxes = xywh2xyxy(ti[:, 2:6]).T
             classes = ti[:, 1].astype("int")
             labels = ti.shape[1] == 6  # labels if no conf column
@@ -728,25 +730,22 @@ def feature_visualization(
             plt.close()
 
 
-def plot_images_and_masks(
+def plot_images_masks(
     images,
     targets,
-    masks,
-    paths=None,
     fname="images.jpg",
     names=None,
     max_size=640,
     max_subplots=16,
 ):
-    # Plot image grid with labels
-    # print("targets:", targets.shape)
-    # print("masks:", masks.shape)
-    # print('--------------------------')
+    masks = targets["masks"]
+    labels = targets["labels"]
+    path = targets["paths"]
 
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
-    if isinstance(targets, torch.Tensor):
-        targets = targets.cpu().numpy()
+    if isinstance(labels, torch.Tensor):
+        labels = labels.cpu().numpy()
     if isinstance(masks, torch.Tensor):
         masks = masks.cpu().numpy()
         masks = masks.astype(int)
@@ -780,10 +779,10 @@ def plot_images_and_masks(
             img = cv2.resize(img, (w, h))
 
         mosaic[block_y : block_y + h, block_x : block_x + w, :] = img
-        if len(targets) > 0:
-            idx = (targets[:, 0]).astype(int)
-            image_targets = targets[idx == i]
-            # print(targets.shape)
+        if len(labels) > 0:
+            idx = (labels[:, 0]).astype(int)
+            image_targets = labels[idx == i]
+            # print(labels.shape)
             # print(masks.shape)
             image_masks = masks[idx == i]
             # mosaic_masks
@@ -861,8 +860,6 @@ def plot_images_and_masks(
 def plot_images_keypoints(
     images,
     targets,
-    keypoints,
-    paths=None,
     fname="images.jpg",
     names=None,
     max_size=640,
@@ -870,10 +867,14 @@ def plot_images_keypoints(
 ):
     # Plot image grid with labels
 
+    keypoints = targets["keypoints"]
+    labels = targets["labels"]
+    path = targets["paths"]
+
     if isinstance(images, torch.Tensor):
         images = images.cpu().float().numpy()
-    if isinstance(targets, torch.Tensor):
-        targets = targets.cpu().numpy()
+    if isinstance(labels, torch.Tensor):
+        labels = labels.cpu().numpy()
     if isinstance(keypoints, torch.Tensor):
         keypoints = keypoints.cpu().numpy()
 
@@ -907,9 +908,9 @@ def plot_images_keypoints(
             img = cv2.resize(img, (w, h))
 
         mosaic[block_y : block_y + h, block_x : block_x + w, :] = img
-        if len(targets) > 0:
-            image_targets = targets[targets[:, 0] == i]
-            image_keypoints = keypoints[targets[:, 0] == i]
+        if len(labels) > 0:
+            image_targets = labels[labels[:, 0] == i]
+            image_keypoints = keypoints[labels[:, 0] == i]
             boxes = xywh2xyxy(image_targets[:, 2:]).T
             classes = image_targets[:, 1].astype("int")
             labels = image_targets.shape[1] == 6  # labels if no conf column
@@ -990,7 +991,7 @@ def plot_images_boxes_and_masks(
     max_subplots=16,
 ):
     if masks is not None:
-        return plot_images_and_masks(
+        return plot_images_masks(
             images, targets, masks, paths, fname, names, max_size, max_subplots
         )
     else:

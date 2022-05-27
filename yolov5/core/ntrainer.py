@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 from ..models.experimental import attempt_load
 from ..models import build_model
+from ..utils.average import MeterBuffer
 from ..utils.autoanchor import check_anchors
 from ..data import build_datasets, build_dataloader
 from ..utils.general import (
@@ -194,7 +195,7 @@ class Trainer:
 
         # stride for dataset and multi-scale training
         self.stride = max(int(self.model.stride.max()), 32)
-        train_dataset = build_datasets(
+        self.dataset = build_datasets(
             self.cfg,
             self.data_dict["train"],
             stride=self.stride,
@@ -202,33 +203,11 @@ class Trainer:
             mode="train",
         )
         self.train_loader = build_dataloader(
-            train_dataset, self.is_distributed, self.batch_size, self.cfg.NUM_WORKERS
+            self.dataset, self.is_distributed, self.batch_size, self.cfg.NUM_WORKERS
         )
         self.max_iter = len(self.train_loader)  # number of batches
 
-        # check cls index of labels
-        mlc = int(
-            np.concatenate(train_dataset.labels, 0)[:, 0].max()
-        )  # max label class
-        assert mlc < self.num_class, (
-            f"Label class {mlc} exceeds nc={self.num_class} in {self.cfg.DATA.PATH}. "
-            "Possible class labels are 0-{self.num_class - 1}"
-        )
-
-        if self.rank == 0:
-            labels = np.concatenate(self.dataset.labels, 0)
-            # TODO: nosave
-            if not self.nosave:
-                plot_labels(labels, names, self.save_dir)
-
-            # Anchors
-            check_anchors(
-                self.dataset,
-                model=self.model,
-                thr=self.hyp["anchor_t"],
-                imgsz=self.img_size,
-            )
-            self.model.half().float()  # pre-reduce anchor precision
+        # NOTE: Polter
 
         # warmup epochs
         self.warmup_iters = max(
@@ -238,16 +217,8 @@ class Trainer:
         # TODO: loss function
         self.compute_loss = ComputeLoss(self.model)  # init loss class
 
-        if self.no_aug_epochs > 0:
-            base_idx = (self.max_epoch - self.no_aug_epochs) * self.max_iter
-            self.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
-
-        self.logger.info(
-            f"Image sizes {self.img_size} train, {self.img_size} val\n"
-            f"Using {self.train_loader.num_workers} dataloader workers\n"
-            f"Logging results to {colorstr('bold', None if self.nosave else self.save_dir)}\n"
-            f"Starting training for {self.max_epoch} epochs..."
-        )
+        # NOTE: Logger
+        self.meter = MeterBuffer(window_size=50)
 
     def train_in_epoch(self):
         for self.epoch in range(self.start_epoch, self.epochs):
@@ -256,7 +227,11 @@ class Trainer:
             self.after_epoch()
 
     def train_in_iter(self):
-        for self.iter, (imgs, targets, paths, _, masks) in self.pbar:
+        for self.iter, (imgs, targets) in self.pbar:
+            # NOTE: this is for plotting
+            self.imgs = imgs
+            self.targets = targets
+
             imgs = (
                 imgs.to(self.device, non_blocking=True).float() / 255.0
             )  # uint8 to float32, 0-255 to 0.0-1.0
@@ -269,17 +244,20 @@ class Trainer:
             if self.opt.multi_scale:
                 imgs = self._multi_scale(imgs)
             # Forward
-            with amp.autocast(enabled=self.cuda):
+            with amp.autocast(enabled=True):
                 pred = self.model(imgs)  # forward
+                # TODO: `loss_items` should be a dict.
                 loss, loss_items = self.compute_loss(
                     pred,
-                    targets.to(self.device),
-                    masks=masks.to(self.device) if self.mask else masks,
+                    targets,
                 )  # loss scaled by batch_size
                 if self.is_distributed:
                     loss *= (
                         get_world_size()
                     )  # gradient averaged between devices in DDP mode
+
+            lr = [x["lr"] for x in self.optimizer.param_groups]  # for loggers
+            self.meter.update(**loss_items, lr=lr)
 
             # Backward
             self.scaler.scale(loss).backward()
@@ -294,27 +272,10 @@ class Trainer:
                 self.last_opt_step = self.progress_in_iter
 
     def before_epoch(self):
-        nloss = 4 if self.mask else 3  #  (obj, cls, box, [seg])
-        self.mloss = torch.zeros(nloss, device=self.device)  # mean losses
-
         self.model.train()
-        if self.epoch == (self.epochs - self.no_aug_epochs):
-            self.logger.info("--->No mosaic aug now!")
-            self.train_loader.close_augment()
-            if self.rank in [-1, 0]:
-                self.save_ckpt(save_file=self.last_mosaic)
 
         if self.is_distributed:
             self.train_loader.batch_sampler.sampler.set_epoch(self.epoch)
-
-        s = (
-            ("\n" + "%10s" * 8)
-            % ("Epoch", "gpu_mem", "box", "seg", "obj", "cls", "labels", "img_size")
-            if self.mask
-            else ("\n" + "%10s" * 7)
-            % ("Epoch", "gpu_mem", "box", "obj", "cls", "labels", "img_size")
-        )
-        logger.info(s)
 
         self.pbar = enumerate(self.train_loader)
         if self.rank == 0:
