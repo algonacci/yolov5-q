@@ -233,7 +233,7 @@ class Trainer:
             self.targets = targets
 
             imgs = (
-                imgs.to(self.device, non_blocking=True).float() / 255.0
+                imgs.cuda().float() / 255.0
             )  # uint8 to float32, 0-255 to 0.0-1.0
 
             # Warmup
