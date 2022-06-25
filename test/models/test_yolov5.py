@@ -1,9 +1,9 @@
 # from yolov5.models.detectors import YOLOV5
-# from yolov5.models.detectors import build_detector, DETECTORS
-from yolov5.models.backbones import build_backbone
+from yolov5.models import build_detector
 from yolov5.data.augmentations import letterbox
 from yolov5.utils.boxes import non_max_suppression, scale_coords
 from yolov5.utils.plots import Visualizer
+from lqcv import Config
 from collections import OrderedDict
 import numpy as np
 import torch
@@ -21,7 +21,7 @@ model_type = {
     "l": {"dep_mul": 1.0, "wid_mul": 1.0},
     "x": {"dep_mul": 1.33, "wid_mul": 1.25},
 }
-cfg = Config.fromfile('/home/laughing/codes/yolov5-q/configs/yolov5/yolov5l.py')
+cfg = Config.fromfile('/home/laughing/codes/yolov5-q/configs/yolov5/yolov5n.py')
 # new_model = YOLOV5(**model_type["n"], anchors=anchors)
 new_model = build_detector(cfg.model)
 new_model.eval()
@@ -75,4 +75,8 @@ cv2.waitKey(0)
 #
 # with open('./weights/target.txt', 'w') as f:
 #     for i, name in enumerate(key_list):
-#         f.write(name + '\n')
+#         shape = ''
+#         for item in shape_list[i]:
+#             shape += str(item)
+#             shape += ' '
+#         f.write(name + ': ' + shape + '\n')

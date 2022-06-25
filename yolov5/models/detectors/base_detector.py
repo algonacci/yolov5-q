@@ -1,18 +1,11 @@
 from ..builder import DETECTORS, build_backbone, build_head, build_neck
-from ..backbones import build_backbone
-from ..heads import build_head
-from ..necks import build_neck
 from torch import nn
 
 
 @DETECTORS.register()
 class BaseDetector(nn.Module):
-    def __init__(
-        self,
-        backbone,
-        neck,
-        head,
-    ) -> None:
+    def __init__(self, backbone, neck, head,) -> None:
+        super().__init__()
         self.backbone = build_backbone(backbone)
         self.neck = build_neck(neck)
         self.head = build_head(head)
@@ -35,5 +28,11 @@ class BaseDetector(nn.Module):
                 corresponds to each class.
         """
         feat = self.extract_feat(img)
-        output = self.neck(feat)
+        output = self.head(feat)
         return output
+
+    def forward_train(self, img):
+        pass
+
+    def forward(self, img):
+        return self.forward_train(img) if self.training else self.forward_test(img)
