@@ -4,39 +4,36 @@
 
 from torch import nn
 
-from .network_blocks import BaseConv, CSPLayer, DWConv, SPPBottleneck
-from ..common import SPPF
+from ..common import SPPF, C3, Conv
+from ..builder import BACKBONES
 
 
+@BACKBONES.register()
 class CSPDarknet(nn.Module):
     def __init__(
         self,
         dep_mul,
         wid_mul,
         out_features=("dark3", "dark4", "dark5"),
-        depthwise=False,
-        act="silu",
+        act=nn.SiLU(),
     ):
         super().__init__()
         assert out_features, "please provide output features of Darknet"
         self.out_features = out_features
-        Conv = DWConv if depthwise else BaseConv
 
         base_channels = int(wid_mul * 64)  # 64
         base_depth = max(round(dep_mul * 3), 1)  # 3
 
         # stem
-        # self.stem = Focus(3, base_channels, ksize=3, act=act)
         self.stem = Conv(3, base_channels, 6, 2, act=act)
 
         # dark2
         self.dark2 = nn.Sequential(
             Conv(base_channels, base_channels * 2, 3, 2, act=act),
-            CSPLayer(
+            C3(
                 base_channels * 2,
                 base_channels * 2,
                 n=base_depth,
-                depthwise=depthwise,
                 act=act,
             ),
         )
@@ -44,11 +41,10 @@ class CSPDarknet(nn.Module):
         # dark3
         self.dark3 = nn.Sequential(
             Conv(base_channels * 2, base_channels * 4, 3, 2, act=act),
-            CSPLayer(
+            C3(
                 base_channels * 4,
                 base_channels * 4,
                 n=base_depth * 2,
-                depthwise=depthwise,
                 act=act,
             ),
         )
@@ -56,11 +52,10 @@ class CSPDarknet(nn.Module):
         # dark4
         self.dark4 = nn.Sequential(
             Conv(base_channels * 4, base_channels * 8, 3, 2, act=act),
-            CSPLayer(
+            C3(
                 base_channels * 8,
                 base_channels * 8,
                 n=base_depth * 3,
-                depthwise=depthwise,
                 act=act,
             ),
         )
@@ -68,11 +63,10 @@ class CSPDarknet(nn.Module):
         # dark5
         self.dark5 = nn.Sequential(
             Conv(base_channels * 8, base_channels * 16, 3, 2, act=act),
-            CSPLayer(
+            C3(
                 base_channels * 16,
                 base_channels * 16,
                 n=base_depth,
-                depthwise=depthwise,
                 act=act,
             ),
             SPPF(base_channels * 16, base_channels * 16, k=5),
@@ -90,4 +84,4 @@ class CSPDarknet(nn.Module):
         outputs["dark4"] = x
         x = self.dark5(x)
         outputs["dark5"] = x
-        return {k: v for k, v in outputs.items() if k in self.out_features}
+        return [v for k, v in outputs.items() if k in self.out_features]

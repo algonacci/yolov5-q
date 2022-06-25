@@ -25,7 +25,9 @@ from ..utils.boxes import xywh2xyxy
 def autopad(k, p=None):  # kernel, padding
     # Pad to 'same'
     if p is None:
-        p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
+        p = (
+            (k - 1) // 2 if isinstance(k, int) else [(x - 1) // 2 for x in k]
+        )  # auto-pad
     return p
 
 
@@ -38,7 +40,9 @@ class Conv(nn.Module):
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)
         self.bn = nn.BatchNorm2d(c2)
         self.act = (
-            nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+            nn.SiLU()
+            if act is True
+            else (act if isinstance(act, nn.Module) else nn.Identity())
         )
 
     def forward(self, x):
@@ -81,7 +85,9 @@ class TransformerBlock(nn.Module):
         if c1 != c2:
             self.conv = Conv(c1, c2)
         self.linear = nn.Linear(c2, c2)  # learnable position embedding
-        self.tr = nn.Sequential(*(TransformerLayer(c2, num_heads) for _ in range(num_layers)))
+        self.tr = nn.Sequential(
+            *(TransformerLayer(c2, num_heads) for _ in range(num_layers))
+        )
         self.c2 = c2
 
     def forward(self, x):
@@ -95,12 +101,18 @@ class TransformerBlock(nn.Module):
 class Bottleneck(nn.Module):
     # Standard bottleneck
     def __init__(
-        self, c1, c2, shortcut=True, g=1, e=0.5
+        self,
+        c1,
+        c2,
+        shortcut=True,
+        g=1,
+        e=0.5,
+        act=True,
     ):  # ch_in, ch_out, shortcut, groups, expansion
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1)
-        self.cv2 = Conv(c_, c2, 3, 1, g=g)
+        self.cv1 = Conv(c1, c_, 1, 1, act=act)
+        self.cv2 = Conv(c_, c2, 3, 1, g=g, act=act)
         self.add = shortcut and c1 == c2
 
     def forward(self, x):
@@ -120,7 +132,9 @@ class BottleneckCSP(nn.Module):
         self.cv4 = Conv(2 * c_, c2, 1, 1)
         self.bn = nn.BatchNorm2d(2 * c_)  # applied to cat(cv2, cv3)
         self.act = nn.SiLU()
-        self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+        self.m = nn.Sequential(
+            *(Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n))
+        )
 
     def forward(self, x):
         y1 = self.cv3(self.m(self.cv1(x)))
@@ -131,14 +145,23 @@ class BottleneckCSP(nn.Module):
 class C3(nn.Module):
     # CSP Bottleneck with 3 convolutions
     def __init__(
-        self, c1, c2, n=1, shortcut=True, g=1, e=0.5
+        self,
+        c1,
+        c2,
+        n=1,
+        shortcut=True,
+        g=1,
+        e=0.5,
+        act=True,
     ):  # ch_in, ch_out, number, shortcut, groups, expansion
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1)
-        self.cv2 = Conv(c1, c_, 1, 1)
-        self.cv3 = Conv(2 * c_, c2, 1)  # act=FReLU(c2)
-        self.m = nn.Sequential(*(Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+        self.cv1 = Conv(c1, c_, 1, 1, act=act)
+        self.cv2 = Conv(c1, c_, 1, 1, act=act)
+        self.cv3 = Conv(2 * c_, c2, 1, act=act)  # act=FReLU(c2)
+        self.m = nn.Sequential(
+            *(Bottleneck(c_, c_, shortcut, g, e=1.0, act=act) for _ in range(n))
+        )
         # self.m = nn.Sequential(*[CrossConv(c_, c_, 3, 1, g, 1.0, shortcut) for _ in range(n)])
 
     def forward(self, x):
@@ -176,7 +199,9 @@ class SPP(nn.Module):
         c_ = c1 // 2  # hidden channels
         self.cv1 = Conv(c1, c_, 1, 1)
         self.cv2 = Conv(c_ * (len(k) + 1), c2, 1, 1)
-        self.m = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k])
+        self.m = nn.ModuleList(
+            [nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k]
+        )
 
     def forward(self, x):
         x = self.cv1(x)
@@ -215,7 +240,13 @@ class Focus(nn.Module):
     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
         return self.conv(
             torch.cat(
-                [x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1
+                [
+                    x[..., ::2, ::2],
+                    x[..., 1::2, ::2],
+                    x[..., ::2, 1::2],
+                    x[..., 1::2, 1::2],
+                ],
+                1,
             )
         )
         # return self.conv(self.contract(x))
@@ -223,7 +254,9 @@ class Focus(nn.Module):
 
 class GhostConv(nn.Module):
     # Ghost Convolution https://github.com/huawei-noah/ghostnet
-    def __init__(self, c1, c2, k=1, s=1, g=1, act=True):  # ch_in, ch_out, kernel, stride, groups
+    def __init__(
+        self, c1, c2, k=1, s=1, g=1, act=True
+    ):  # ch_in, ch_out, kernel, stride, groups
         super().__init__()
         c_ = c2 // 2  # hidden channels
         self.cv1 = Conv(c1, c_, k, s, None, g, act)
@@ -245,7 +278,9 @@ class GhostBottleneck(nn.Module):
             GhostConv(c_, c2, 1, 1, act=False),
         )  # pw-linear
         self.shortcut = (
-            nn.Sequential(DWConv(c1, c1, k, s, act=False), Conv(c1, c2, 1, 1, act=False))
+            nn.Sequential(
+                DWConv(c1, c1, k, s, act=False), Conv(c1, c2, 1, 1, act=False)
+            )
             if s == 2
             else nn.Identity()
         )
@@ -261,7 +296,12 @@ class Contract(nn.Module):
         self.gain = gain
 
     def forward(self, x):
-        b, c, h, w = x.size()  # assert (h / s == 0) and (W / s == 0), 'Indivisible gain'
+        (
+            b,
+            c,
+            h,
+            w,
+        ) = x.size()  # assert (h / s == 0) and (W / s == 0), 'Indivisible gain'
         s = self.gain
         x = x.view(b, c, h // s, s, w // s, s)  # x(1,64,40,2,40,2)
         x = x.permute(0, 3, 5, 1, 2, 4).contiguous()  # x(1,2,2,64,40,40)
@@ -337,7 +377,9 @@ class DetectMultiBackend(nn.Module):
                 names = yaml.safe_load(f)["names"]  # class names
 
         if pt:  # PyTorch
-            model = attempt_load(weights if isinstance(weights, list) else w, map_location=device)
+            model = attempt_load(
+                weights if isinstance(weights, list) else w, map_location=device
+            )
             stride = int(model.stride.max())  # model stride
             names = (
                 model.module.names if hasattr(model, "module") else model.names
@@ -377,7 +419,9 @@ class DetectMultiBackend(nn.Module):
             network = core.read_network(
                 model=w, weights=Path(w).with_suffix(".bin")
             )  # *.xml, *.bin paths
-            executable_network = core.load_network(network, device_name="CPU", num_requests=1)
+            executable_network = core.load_network(
+                network, device_name="CPU", num_requests=1
+            )
         elif engine:  # TensorRT
             LOGGER.info(f"Loading {w} for TensorRT inference...")
             import tensorrt as trt  # https://developer.nvidia.com/nvidia-tensorrt-download
@@ -392,7 +436,9 @@ class DetectMultiBackend(nn.Module):
                 name = model.get_binding_name(index)
                 dtype = trt.nptype(model.get_binding_dtype(index))
                 shape = tuple(model.get_binding_shape(index))
-                data = torch.from_numpy(np.empty(shape, dtype=np.dtype(dtype))).to(device)
+                data = torch.from_numpy(np.empty(shape, dtype=np.dtype(dtype))).to(
+                    device
+                )
                 bindings[name] = Binding(name, dtype, shape, data, int(data.data_ptr()))
             binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
             context = model.create_execution_context()
@@ -408,7 +454,9 @@ class DetectMultiBackend(nn.Module):
                 import tensorflow as tf
 
                 model = tf.keras.models.load_model(w)
-            elif pb:  # GraphDef https://www.tensorflow.org/guide/migrate#a_graphpb_or_graphpbtxt
+            elif (
+                pb
+            ):  # GraphDef https://www.tensorflow.org/guide/migrate#a_graphpb_or_graphpbtxt
                 LOGGER.info(f"Loading {w} for TensorFlow GraphDef inference...")
                 import tensorflow as tf
 
@@ -423,12 +471,16 @@ class DetectMultiBackend(nn.Module):
 
                 graph_def = tf.Graph().as_graph_def()
                 graph_def.ParseFromString(open(w, "rb").read())
-                frozen_func = wrap_frozen_graph(gd=graph_def, inputs="x:0", outputs="Identity:0")
+                frozen_func = wrap_frozen_graph(
+                    gd=graph_def, inputs="x:0", outputs="Identity:0"
+                )
             elif (
                 tflite
             ):  # https://www.tensorflow.org/lite/guide/python#install_tensorflow_lite_for_python
                 if "edgetpu" in w.lower():  # Edge TPU
-                    LOGGER.info(f"Loading {w} for TensorFlow Lite Edge TPU inference...")
+                    LOGGER.info(
+                        f"Loading {w} for TensorFlow Lite Edge TPU inference..."
+                    )
                     import tflite_runtime.interpreter as tfli
 
                     delegate = {
@@ -437,7 +489,8 @@ class DetectMultiBackend(nn.Module):
                         "Windows": "edgetpu.dll",
                     }[platform.system()]
                     interpreter = tfli.Interpreter(
-                        model_path=w, experimental_delegates=[tfli.load_delegate(delegate)]
+                        model_path=w,
+                        experimental_delegates=[tfli.load_delegate(delegate)],
                     )
                 else:  # Lite
                     LOGGER.info(f"Loading {w} for TensorFlow Lite inference...")
@@ -453,7 +506,11 @@ class DetectMultiBackend(nn.Module):
         # YOLOv5 MultiBackend inference
         b, ch, h, w = im.shape  # batch, channel, height, width
         if self.pt or self.jit:  # PyTorch
-            y = self.model(im) if self.jit else self.model(im, augment=augment, visualize=visualize)
+            y = (
+                self.model(im)
+                if self.jit
+                else self.model(im, augment=augment, visualize=visualize)
+            )
             return y if val else y[0]
         elif self.dnn:  # ONNX OpenCV DNN
             im = im.cpu().numpy()  # torch to numpy
@@ -462,7 +519,8 @@ class DetectMultiBackend(nn.Module):
         elif self.onnx:  # ONNX Runtime
             im = im.cpu().numpy()  # torch to numpy
             y = self.session.run(
-                [self.session.get_outputs()[0].name], {self.session.get_inputs()[0].name: im}
+                [self.session.get_outputs()[0].name],
+                {self.session.get_inputs()[0].name: im},
             )[0]
         elif self.xml:  # OpenVINO
             im = im.cpu().numpy()  # FP32
@@ -474,7 +532,9 @@ class DetectMultiBackend(nn.Module):
                 blob_name="images", blob=self.ie.Blob(desc, im)
             )  # name=next(iter(request.input_blobs))
             request.infer()
-            y = request.output_blobs["output"].buffer  # name=next(iter(request.output_blobs))
+            y = request.output_blobs[
+                "output"
+            ].buffer  # name=next(iter(request.output_blobs))
         elif self.engine:  # TensorRT
             assert im.shape == self.bindings["images"].shape, (
                 im.shape,
@@ -484,15 +544,21 @@ class DetectMultiBackend(nn.Module):
             self.context.execute_v2(list(self.binding_addrs.values()))
             y = self.bindings["output"].data
         elif self.coreml:  # CoreML
-            im = im.permute(0, 2, 3, 1).cpu().numpy()  # torch BCHW to numpy BHWC shape(1,320,192,3)
+            im = (
+                im.permute(0, 2, 3, 1).cpu().numpy()
+            )  # torch BCHW to numpy BHWC shape(1,320,192,3)
             im = Image.fromarray((im[0] * 255).astype("uint8"))
             # im = im.resize((192, 320), Image.ANTIALIAS)
             y = self.model.predict({"image": im})  # coordinates are xywh normalized
             box = xywh2xyxy(y["coordinates"] * [[w, h, w, h]])  # xyxy pixels
-            conf, cls = y["confidence"].max(1), y["confidence"].argmax(1).astype(np.float)
+            conf, cls = y["confidence"].max(1), y["confidence"].argmax(1).astype(
+                np.float
+            )
             y = np.concatenate((box, conf.reshape(-1, 1), cls.reshape(-1, 1)), 1)
         else:  # TensorFlow (SavedModel, GraphDef, Lite, Edge TPU)
-            im = im.permute(0, 2, 3, 1).cpu().numpy()  # torch BCHW to numpy BHWC shape(1,320,192,3)
+            im = (
+                im.permute(0, 2, 3, 1).cpu().numpy()
+            )  # torch BCHW to numpy BHWC shape(1,320,192,3)
             if self.saved_model:  # SavedModel
                 y = self.model(im, training=False).numpy()
             elif self.pb:  # GraphDef
@@ -524,6 +590,8 @@ class DetectMultiBackend(nn.Module):
                 isinstance(self.device, torch.device) and self.device.type != "cpu"
             ):  # only warmup GPU models
                 im = (
-                    torch.zeros(*imgsz).to(self.device).type(torch.half if half else torch.float)
+                    torch.zeros(*imgsz)
+                    .to(self.device)
+                    .type(torch.half if half else torch.float)
                 )  # input image
                 self.forward(im)  # warmup

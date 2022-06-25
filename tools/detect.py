@@ -86,7 +86,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
 
     # Load model
     Model = Yolov5Segment if mask else Yolov5
-    detector = Model(weights, device=device, img_hw=imgsz, auto=True)
+    detector = Model(weights, device=device, img_hw=imgsz, auto=False)
     names = detector.names
 
     # Dataloader

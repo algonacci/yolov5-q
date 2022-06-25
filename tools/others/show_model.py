@@ -5,7 +5,6 @@ import torch
 from yolov5.utils.general import print_args
 from yolov5.utils.checker import check_yaml
 from yolov5.utils.torch_utils import select_device
-from yolov5.models.architecture.yolo_pafpn import YOLOPAFPN
 
 FILE = Path(__file__).resolve()
 
@@ -19,15 +18,9 @@ if __name__ == "__main__":
     print_args(FILE.stem, opt)
     device = select_device(opt.device)
 
-    img = torch.rand(1, 3, 640, 640)
-    model = YOLOPAFPN(1, 1)
-    print(model)
-    for output in model(img):
-        print(output.shape)
-    exit()
     # Create model
     model = Model(opt.cfg).to(device)
-    print(model)
+    # print(model)
 
     # for k, m in model.named_modules():
     # # for k, m in model.named_children():
