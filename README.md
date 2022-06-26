@@ -7,32 +7,18 @@
 - The weights(`s`, `m`, `l`) will releases when I finish my `yolov5l` training.
 
 ## ✍TODO
-- [X] `plot_results`
-- [X] `process_masks` mask cuda out of memory
-- [X] `detect_seg.py`
-- [X] support flip augmentation
-- [X] val
-- [X] clean `dataset.py`
-- [X] DetectSegment head support `gw`
-- [X] smaller gt_masks for saving memory(support `train.py` only)
-- [X] test `scale_coords` influence for map
-- [X] nosave
-- [X] `train_cfg.py`
-- [ ] support albumentations
-- [ ] Mixup
-- [ ] `DetectSegment` head support `gd`
-- [ ] better way to compute seg loss
-- [ ] coco datasets
-- [X] coco eval
-- [ ] clean pruning code
-- [ ] more powerful `mask head`
-- [ ] areas
-- [ ] better visualization
-- [ ] looks like `plot_masks` will make image blur
-- [ ] plot_images bug
-- [ ] tensorrt export
-- [ ] loss
-- [ ] EvalHook
+- [ ] add more backbone
+- [ ] dataset
+  - [ ] yolo
+  - [ ] coco
+- [ ] assigner
+- [ ] head
+  - [ ] loss
+  - [ ] segment head
+  - [ ] keypoint head
+- [ ] trainer
+- [ ] eval(coco)
+- [ ] hook
 
 ## 🖼️Results
 <div align=center>
