@@ -19,6 +19,7 @@
 - [ ] trainer
 - [ ] eval(coco)
 - [ ] hook
+- [ ] tensorrt export
 
 ## 🖼️Results
 <div align=center>
