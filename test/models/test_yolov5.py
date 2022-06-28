@@ -64,6 +64,11 @@ vis(ori_img, output)
 cv2.imshow("p", ori_img)
 cv2.waitKey(0)
 
+new_model.train()
+outputs = new_model(img)
+for output in new_model(img):
+    print(output.shape)
+
 
 # data_dict = {}
 # key_list = []

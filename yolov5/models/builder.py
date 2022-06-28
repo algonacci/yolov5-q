@@ -4,6 +4,7 @@ BACKBONES = Registry("BACKBONES")
 NECKS = Registry("NECKS")
 HEADS = Registry("HEADS")
 DETECTORS = Registry("DETECTORS")
+LOSSES = Registry("LOSSES")
 
 
 def build_backbone(cfg):
@@ -20,3 +21,6 @@ def build_head(cfg):
 
 def build_detector(cfg):
     return build_from_config(cfg, DETECTORS)
+
+def build_loss(cfg):
+    return build_from_config(cfg, LOSSES)

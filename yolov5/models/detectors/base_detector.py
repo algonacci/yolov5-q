@@ -4,11 +4,11 @@ from torch import nn
 
 @DETECTORS.register()
 class BaseDetector(nn.Module):
-    def __init__(self, backbone, neck, head,) -> None:
+    def __init__(self, backbone, neck, bbox_head) -> None:
         super().__init__()
         self.backbone = build_backbone(backbone)
         self.neck = build_neck(neck)
-        self.head = build_head(head)
+        self.bbox_head = build_head(bbox_head)
 
     def extract_feat(self, img):
         """Directly extract features from the backbone+neck."""
@@ -28,11 +28,13 @@ class BaseDetector(nn.Module):
                 corresponds to each class.
         """
         feat = self.extract_feat(img)
-        output = self.head(feat)
+        output = self.bbox_head(feat)
         return output
 
     def forward_train(self, img):
-        pass
+        feat = self.extract_feat(img)
+        output = self.bbox_head(feat)
+        return output
 
     def forward(self, img):
         return self.forward_train(img) if self.training else self.forward_test(img)

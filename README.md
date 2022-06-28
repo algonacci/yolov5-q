@@ -11,7 +11,7 @@
 - [ ] dataset
   - [ ] yolo
   - [ ] coco
-- [ ] assigner
+- [X] assigner
 - [ ] head
   - [ ] loss
   - [ ] segment head
