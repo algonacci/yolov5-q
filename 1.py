@@ -35,8 +35,19 @@
 # print(flatten_priors.shape)
 
 from yolov5.core import multi_apply
+import torch
 
 def testA(a):
-    return [], []
+    return torch.tensor([1, 2, 3]), [2, 3, 4]
 
-print(multi_apply(testA, [1, 2, 3]))
+output = multi_apply(testA, [1, 2, 3, 4])[0]
+output = torch.stack(output)
+print(output, output.shape, output.dim())
+output = output.sum(0).tolist()
+print(output)
+
+# import torch
+# a = torch.zeros((2, 3), dtype=torch.bool)
+# a[1, 2] = 1
+# print(a)
+# print((a == 1).sum())

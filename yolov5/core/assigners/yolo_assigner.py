@@ -23,6 +23,7 @@ class YOLOV5Assginer(object):
     def assign(
         self,
         targets,
+        anchors,
         feature_sizes,
     ):
         """labels assign.
@@ -34,13 +35,13 @@ class YOLOV5Assginer(object):
             feature_sizes (list[(h, w), (h, w), (h, w)]): feature sizes
                 of multi feature maps.
         Returns:
-            tbox (list):  a list include gt bboxes after labels assign 
+            tbox (list):  a list include gt bboxes after labels assign
                 from multi-level feature maps.
-            tidx (list): a list include gt index after labels assign 
+            tidx (list): a list include gt index after labels assign
                 from multi-level feature maps.
-            indices (list): a list include preditions index after labels assign 
+            indices (list): a list include preditions index after labels assign
                 from multi-level feature maps.
-            anch (list):a list include anchors after labels assign 
+            anch (list):a list include anchors after labels assign
                 from multi-level feature maps.
         """
         tidx, tbox, indices, anch = [], [], [], []
@@ -50,15 +51,17 @@ class YOLOV5Assginer(object):
         )  # offsets
 
         for i in range(self.num_layers):
-            anchors = self.anchors[i]
-            gain[0:4] = torch.tensor(feature_sizes[i])[[1, 0, 1, 0]]  # xyxy gain
+            anchor = anchors[i]
+            h, w = feature_sizes[i]
+            assigned_gt_ind = torch.zeros((len(anchor, h, w)), dtype=torch.bool)
+            gain[0:4] = torch.tensor([h, w])[[1, 0, 1, 0]]  # xyxy gain
 
             # Match targets to anchors
             t = targets * gain
             # Match targets to anchors
             if targets.shape[1]:  # num_bboxes
                 # Matches
-                r = t[:, :, 4:6] / anchors[:, None]  # wh ratio
+                r = t[:, :, 4:6] / anchor[:, None]  # wh ratio
                 j = torch.max(r, 1.0 / r).max(2)[0] < self.anchor_t  # compare
                 t = t[j]  # filter
 
@@ -82,16 +85,12 @@ class YOLOV5Assginer(object):
 
             # Append
             aidx = t[:, 4].long()  # anchor indices
-            indices.append(
-                (
-                    aidx * (gain[1] * gain[0])
-                    + gj.clamp_(0, gain[1] - 1) * gain[1]
-                    + gi.clamp_(0, gain[0] - 1)
-                )
-            )  # image, anchor, grid indices
+            assigned_gt_ind[
+                aidx, gj.clamp_(0, gain[1] - 1), gi.clamp_(0, gain[0] - 1)
+            ] = 1
+            indices.append(assigned_gt_ind.view(-1))  # image, anchor, grid indices
             tbox.append(torch.cat((gxy - gij, gwh), 1))  # box
-            anch.append(anchors[aidx])  # anchors
+            anch.append(anchor[aidx])  # anchors
             tidx.append(t[:, 5].long())  # class
-            # tcls.append(gt_labels[tidx])  # class
 
         return tbox, tidx, indices, anch
