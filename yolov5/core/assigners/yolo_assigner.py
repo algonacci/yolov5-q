@@ -50,7 +50,7 @@ class YOLOV5Assginer(object):
             torch.tensor(self.offset, device=targets.device).float() * self.bias
         )  # offsets
 
-        for i in range(self.num_layers):
+        for i in range(len(feature_sizes)):
             anchor = anchors[i]
             h, w = feature_sizes[i]
             assigned_gt_ind = torch.zeros((len(anchor, h, w)), dtype=torch.bool)
@@ -61,7 +61,7 @@ class YOLOV5Assginer(object):
             # Match targets to anchors
             if targets.shape[1]:  # num_bboxes
                 # Matches
-                r = t[:, :, 4:6] / anchor[:, None]  # wh ratio
+                r = t[:, :, 2:4] / anchor[:, None]  # wh ratio
                 j = torch.max(r, 1.0 / r).max(2)[0] < self.anchor_t  # compare
                 t = t[j]  # filter
 

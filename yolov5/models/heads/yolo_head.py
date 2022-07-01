@@ -30,6 +30,7 @@ class YOLOV5Head(nn.Module):
         loss_obj=dict(
             type="CrossEntropyLoss", use_sigmoid=True, reduction="none", loss_weight=1.0
         ),
+        obj_balance=[0.4, 1.0, 0.4],
     ):
         super().__init__()
         assert len(anchors) == len(strides) == len(in_channels)
@@ -55,6 +56,7 @@ class YOLOV5Head(nn.Module):
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.loss_obj = build_loss(loss_obj)
+        self.obj_balance = obj_balance
 
     def forward(self, x):
         """
@@ -109,13 +111,7 @@ class YOLOV5Head(nn.Module):
         return grid, anchor_grid
 
     def loss(
-        self,
-        cls_preds,
-        bbox_preds,
-        objectnesses,
-        gt_bboxes,
-        gt_labels,
-        img_metas,
+        self, cls_preds, bbox_preds, objectnesses, gt_bboxes, gt_labels, img_metas,
     ):
         """label assign and Compute losses.
 
@@ -172,9 +168,8 @@ class YOLOV5Head(nn.Module):
         bbox_targets = torch.cat(tbox, 0)
         # (num_assigned, 2)
         anchors = torch.cat(anchors, 0)
-        # (num_layers, )
-        multi_level_pos = torch.stack(multi_level_pos).sum(0).tolist()
-        assert sum(multi_level_pos) == len(bbox_targets)
+        # (num_assigned, )
+        multi_level_pos = torch.cat(multi_level_pos, 0)
 
         decoded_bboxes = self._decode_bbox(
             flatten_bbox_preds.view(-1, 4)[indices], anchors
@@ -183,17 +178,28 @@ class YOLOV5Head(nn.Module):
         # comptue losses
         loss_bbox, ious = self.loss_bbox(decoded_bboxes, bbox_targets, keep_iou=True)
         loss_obj = self.loss_obj(flatten_objectness.view(-1)[indices], ious)
-        loss_cls = self.loss_cls(
-            flatten_cls_preds.view(-1, self.num_classes)[indices], cls_targets
-        )
+        if self.num_classes > 1:  # cls loss (only if multiple classes)
+            loss_cls = self.loss_cls(
+                flatten_cls_preds.view(-1, self.num_classes)[indices], cls_targets
+            )
 
         # calculation of yolov5 loss weights
+        for i in range(self.num_layers):
+            idx = multi_level_pos == (i + 1)
+            lbox += loss_bbox[idx].mean()
+            lobj += loss_obj[idx].mean() * self.obj_balance[i]
+            if self.num_classes > 1:
+                lcls += loss_cls[idx].mean()
+
+        loss_items = {
+            "bbox": lbox * num_imgs,
+            "object": lobj * num_imgs,
+            "cls": lcls * num_imgs,
+        }
+        return loss_items
 
     def _get_target_single(
-        self,
-        gt_bboxes,
-        gt_labels,
-        feature_sizes,
+        self, gt_bboxes, gt_labels, feature_sizes,
     ):
         """Label assign for priors in a single image.
         Args:
@@ -243,16 +249,19 @@ class YOLOV5Head(nn.Module):
             targets, self.anchors / self.strides.view(-1, 1, 1), feature_sizes
         )
 
-        # NOTE: keep the label assign numbers of multi-level feature map,
+        # NOTE: set a sign(1, 2, 3) for label assign index of each level feature map,
         # cause calculation of original yolov5 loss is in feature map level.
-        multi_level_pos = torch.tensor(
-            [(idx == 1).sum() for idx in indices], dtype=torch.long
-        )
+        multi_level_pos = [
+            torch.as_tensor(idx.clone(), dtype=torch.long) for idx in indices
+        ]
+        for i, pos in enumerate(multi_level_pos):
+            pos[pos == 1] = i + 1
 
+        # TODO: deal with the situation when num_bboxes=0
         tcls = (
             torch.stack([gt_labels[t] for t in tidx], dim=0).view(-1)
             if len(tidx) > 0
-            else tcls
+            else []
         )
         anchors = (
             torch.stack(anchors, dim=0).view(-1, 2) if len(anchors) > 0 else anchors
