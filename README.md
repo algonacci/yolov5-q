@@ -107,7 +107,7 @@ python tools/train.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.p
 
 - eval objection
 ```shell
-python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt --epochs 50 --batch-size 8
+python tools/val.py --data ./data/seg/balloon.yaml --weights weights/yolov5s.pt --batch-size 8
 ```
 
 - eval segmentation
