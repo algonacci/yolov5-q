@@ -278,6 +278,9 @@ class YOLODetectionDataset(BaseDataset):
             )  # path not writeable
         return x
 
+    def __len__(self):
+        return len(self.img_files)
+
 
 class YOLOSegmentDataset(YOLODetectionDataset):
     def __init__(
